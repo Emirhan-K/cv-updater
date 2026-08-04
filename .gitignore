@@ -8,6 +8,10 @@ graphify-out/
 .env
 data/master.json
 *.pdf
+# Süper setin durumu ve açık işler — terfi tarihi, ekip büyüklüğü gibi kişisel
+# olgular içeriyorlar. Depo public olacağı için yerel kalırlar.
+docs/MASTER_DATA.md
+TODO.md
 
 # Üretilen çıktı
 out/

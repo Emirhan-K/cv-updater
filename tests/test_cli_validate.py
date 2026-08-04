@@ -115,8 +115,7 @@ def test_clean_resume_reports_zero_errors_zero_warnings(tmp_path: Path) -> None:
                         "id": f"exp-{n}",
                         "hidden": False,
                         "company": f"Şirket {n}",
-                        "x_bullets": [b for b in bullets if b["id"].startswith(f"exp-{n}.")]
-                        * 2,
+                        "x_bullets": [b for b in bullets if b["id"].startswith(f"exp-{n}.")] * 2,
                     }
                     for n in range(3)
                 ]

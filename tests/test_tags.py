@@ -61,9 +61,7 @@ def test_unknown_reports_only_unknown_tags(tags_yaml_path: Path) -> None:
     assert vocab.unknown(["python", "uydurma-etiket"]) == ["uydurma-etiket"]
 
 
-def test_example_file_uses_only_known_tags(
-    tags_yaml_path: Path, master_example_raw: str
-) -> None:
+def test_example_file_uses_only_known_tags(tags_yaml_path: Path, master_example_raw: str) -> None:
     """Örnek dosya sözlüğün dışına çıkmamalı — yoksa lint'in kendi örneği hata verir."""
     vocab = load_tags(tags_yaml_path)
     resume = Resume.model_validate_json(master_example_raw)

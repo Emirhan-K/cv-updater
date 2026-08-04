@@ -150,9 +150,7 @@ def validate(
 
 @app.command()
 def tailor(
-    posting: Annotated[
-        Path | None, typer.Argument(help="İlan metni dosyası (issue 04).")
-    ] = None,
+    posting: Annotated[Path | None, typer.Argument(help="İlan metni dosyası (issue 04).")] = None,
 ) -> None:
     """İlana göre tailored.json + match_report.md üret (LLM adımı)."""
     console.print("[yellow]tailor henüz uygulanmadı (issue 04-09).[/yellow]")

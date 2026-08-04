@@ -50,9 +50,7 @@ def load_tags(path: Path | None = None) -> TagVocabulary:
     """Sözlüğü diskten okur. Yol verilmezse `data/tags.yaml`."""
     target = path or TAGS_YAML
     data = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
-    categories = {
-        name: tuple(tags or ()) for name, tags in (data.get("categories") or {}).items()
-    }
+    categories = {name: tuple(tags or ()) for name, tags in (data.get("categories") or {}).items()}
     aliases = {
         str(key).strip().lower(): str(value).strip().lower()
         for key, value in (data.get("aliases") or {}).items()

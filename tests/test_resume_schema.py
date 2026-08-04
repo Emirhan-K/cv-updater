@@ -115,11 +115,32 @@ def test_example_holds_no_personal_data(master_example_raw: str) -> None:
         assert not re.search(rf"\b{word}\b", lowered), f"örnek dosyada kişisel veri: {word}"
 
 
-def test_master_json_is_gitignored() -> None:
-    gitignore = (Path(__file__).resolve().parent.parent / ".gitignore").read_text(
-        encoding="utf-8"
-    )
-    assert "data/master.json" in gitignore
+@pytest.mark.parametrize(
+    "path",
+    [
+        "data/master.json",  # telefon, e-posta, adres
+        "docs/MASTER_DATA.md",  # süper setin nasıl büyütüleceği + gizlilik notları
+        "TODO.md",  # terfi tarihi, ekip büyüklüğü, tarih aralıkları
+        ".env",
+    ],
+)
+def test_personal_files_are_gitignored(path: str) -> None:
+    """Depo public olacak — kişisel veri taşıyan hiçbir dosya commit'lenmemeli."""
+    gitignore = (Path(__file__).resolve().parent.parent / ".gitignore").read_text(encoding="utf-8")
+    assert path in gitignore, f"{path} gitignore'da değil"
+
+
+def test_no_personal_file_is_tracked_by_git() -> None:
+    """Gitignore doğru olsa bile dosya daha önce eklenmiş olabilir — takipte mi?"""
+    import subprocess
+
+    repo = Path(__file__).resolve().parent.parent
+    tracked = subprocess.run(
+        ["git", "ls-files"], cwd=repo, capture_output=True, text=True, check=False
+    ).stdout.splitlines()
+    personal = ("data/master.json", "docs/MASTER_DATA.md", "TODO.md", ".env")
+    leaked = [p for p in personal if p in tracked]
+    assert not leaked, f"git tarafından takip ediliyor: {leaked}"
 
 
 # --- x_meta / x_bullets sözleşmesi ------------------------------------------ #

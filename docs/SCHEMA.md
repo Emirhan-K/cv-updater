@@ -127,4 +127,5 @@ odaklı); uyarlama ilana göre birini seçer. Süper setin anlamı bu.
 - Modeller `extra="allow"` ile çalışır: rxresu.me yeni bir alan eklerse round-trip'te
   kaybolmaz.
 
-Süper seti nasıl büyüteceğin ve madde yazım kuralları: [`MASTER_DATA.md`](MASTER_DATA.md).
+Süper seti nasıl büyüteceğin ve madde yazım kuralları `docs/MASTER_DATA.md`'de — o dosya
+`data/master.json` ile aynı gizlilik sınıfında olduğu için gitignore'da, yalnızca yerelde.

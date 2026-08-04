@@ -182,9 +182,7 @@ def visible_link_texts(resume: Resume) -> list[str]:
     texts = [field.text for field in resume.basics.customFields]
     texts += [profile.username for profile in resume.sections.profiles.items]
     texts += [
-        profile.website.label
-        for profile in resume.sections.profiles.items
-        if not profile.hidden
+        profile.website.label for profile in resume.sections.profiles.items if not profile.hidden
     ]
     texts.append(resume.basics.website.label)
     return [t for t in texts if t]
@@ -355,16 +353,12 @@ def check_ids(resume: Resume) -> Iterator[Finding]:
 
     for item_id, count in Counter(item_ids).items():
         if count > 1:
-            yield Finding(
-                "error", "ids.duplicate", f"item/{item_id}", f"{count} kez geçiyor."
-            )
+            yield Finding("error", "ids.duplicate", f"item/{item_id}", f"{count} kez geçiyor.")
 
     bullet_ids = [bullet.id for _, bullet in resume.iter_bullets()]
     for bullet_id, count in Counter(bullet_ids).items():
         if count > 1:
-            yield Finding(
-                "error", "ids.duplicate", f"bullet/{bullet_id}", f"{count} kez geçiyor."
-            )
+            yield Finding("error", "ids.duplicate", f"bullet/{bullet_id}", f"{count} kez geçiyor.")
 
     for owner_id, bullet in resume.iter_bullets():
         if not bullet.id.strip():
@@ -397,9 +391,7 @@ def check_superset_size(resume: Resume) -> Iterator[Finding]:
             )
 
     tagged_skills = [
-        item
-        for item in resume.sections.skills.items
-        if item.x_meta and item.x_meta.tags
+        item for item in resume.sections.skills.items if item.x_meta and item.x_meta.tags
     ]
     if len(tagged_skills) < MIN_TAGGED_SKILLS:
         yield Finding(
@@ -493,9 +485,7 @@ def lint(resume: Resume, vocabulary: TagVocabulary | None = None) -> LintReport:
             1 for s in resume.sections.skills.items if s.x_meta and s.x_meta.tags
         ),
         "madde": len(bullets),
-        "etiketsiz madde": sum(
-            1 for _, b in bullets if not (b.x_meta and b.x_meta.tags)
-        ),
+        "etiketsiz madde": sum(1 for _, b in bullets if not (b.x_meta and b.x_meta.tags)),
         "etkisi olan madde": sum(1 for _, b in bullets if b.x_meta and b.x_meta.impact),
         "EN madde": sum(1 for _, b in bullets if b.x_meta and b.x_meta.lang == "en"),
     }

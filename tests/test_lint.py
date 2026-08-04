@@ -60,9 +60,7 @@ def test_two_emails_in_one_field_is_an_error() -> None:
 def test_second_email_elsewhere_is_an_error() -> None:
     resume = Resume()
     resume.basics.email = "ada@example.com"
-    resume.basics.customFields.append(
-        CustomField(id="cf", icon="", text="eski: old@example.com")
-    )
+    resume.basics.customFields.append(CustomField(id="cf", icon="", text="eski: old@example.com"))
     assert "email.single" in rules(check_email(resume))
 
 
@@ -243,9 +241,7 @@ def test_prose_walk_still_covers_experience_text() -> None:
 
 def test_unknown_tag_is_an_error() -> None:
     resume = Resume()
-    resume.sections.skills.items = [
-        SkillItem(id="s1", name="Kobol", x_meta=XMeta(tags=["cobol"]))
-    ]
+    resume.sections.skills.items = [SkillItem(id="s1", name="Kobol", x_meta=XMeta(tags=["cobol"]))]
     assert "tags.unknown" in rules(check_tags(resume, default_vocabulary()))
 
 
@@ -267,9 +263,7 @@ def test_tagged_bullet_passes() -> None:
         ExperienceItem(
             id="x",
             company="Örnek",
-            x_bullets=[
-                XBullet(id="x.1", text="Bir şey yaptı.", x_meta=XMeta(tags=["python"]))
-            ],
+            x_bullets=[XBullet(id="x.1", text="Bir şey yaptı.", x_meta=XMeta(tags=["python"]))],
         )
     ]
     assert not list(check_tags(resume, default_vocabulary()))

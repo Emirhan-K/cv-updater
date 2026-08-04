@@ -5,7 +5,11 @@
 | [`../README.md`](../README.md) | Proje ne yapar, kurulum, komutlar, örnek akış | 01 |
 | [`ROADMAP.md`](ROADMAP.md) | Teknik kararlar, 13 issue'luk plan ve faz dağılımı | 01 |
 | [`SCHEMA.md`](SCHEMA.md) | `master.json` alan alan; `x_meta` sözleşmesi; Reactive Resume'dan farklar | 02 |
-| [`MASTER_DATA.md`](MASTER_DATA.md) | Süper set nasıl büyütülür; madde yazım kuralları; `validate` lint kuralları | 03 |
+| `MASTER_DATA.md` **(yerel)** | Süper set nasıl büyütülür; madde yazım kuralları; `validate` lint kuralları | 03 |
+
+`MASTER_DATA.md` gitignore'dadır: süper setin durumunu (terfi tarihi, ekip büyüklüğü, tarih
+aralıkları) taşıdığı için `data/master.json` ile aynı gizlilik sınıfındadır. `CLAUDE.md` gibi
+yalnızca yerelde yaşar.
 
 ## Mimari, kuşbakışı
 
