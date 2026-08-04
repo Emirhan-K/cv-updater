@@ -1,0 +1,130 @@
+# Kontrollü etiket sözlüğü.
+#
+# `x_meta.tags` serbest metin DEĞİLDİR — ön filtre (issue 06) puanlamayı bu sözlük
+# üzerinden yapar, dolayısıyla yazım farkı ("nextjs" vs "next.js") sessizce puan
+# kaybettirir. `cv-updater validate` sözlükte olmayan her etiketi hata sayar.
+#
+# Yeni etiket eklemek serbest ama ucuz değil: her etiket ilanla eşleşme yüzeyidir.
+# Aynı kavramın ikinci yazımını eklemek yerine `aliases` altına yaz.
+
+version: 1
+
+categories:
+  dil:
+    - python
+    - typescript
+    - javascript
+    - dart
+    - sql
+    - bash
+
+  ai-ml:
+    - machine-learning
+    - deep-learning
+    - computer-vision
+    - nlp
+    - llm
+    - rag
+    - fine-tuning
+    - prompt-engineering
+    - speech-to-text
+    - yolo
+    - pytorch
+    - tensorflow
+    - scikit-learn
+    - whisper
+    - opencv
+    - feature-extraction
+    - structured-output
+
+  backend:
+    - fastapi
+    - flask
+    - rest-api
+    - microservices
+    - rabbitmq
+    - async
+    - api-client
+    - concurrency
+    - webhook
+
+  frontend:
+    - nextjs
+    - react
+    - tailwind
+    - flutter
+    - react-native
+    - ui-ux
+
+  veri:
+    - postgresql
+    - prisma
+    - sql-server
+    - lancedb
+    - vector-search
+    - data-pipeline
+    - etl
+    - reporting
+
+  kurumsal:
+    - erp
+    - b2b
+    - multi-tenant
+    - white-label
+    - payment-integration
+    - order-management
+
+  altyapi:
+    - aws
+    - docker
+    - linux
+    - ci-cd
+    - n8n
+    - automation
+    - deployment
+    - monitoring
+
+  pratik:
+    - testing
+    - code-review
+    - git
+    - documentation
+    - open-source
+    - packaging
+
+  liderlik:
+    - team-lead
+    - mentoring
+    - sprint-planning
+    - architecture
+    - stakeholder-communication
+    - teaching
+    - growth
+
+# Aynı kavramın ilanlarda geçen diğer yazımları. Ön filtre ilanı okurken bunları
+# kanonik etikete indirger; `x_meta.tags` içine ASLA alias yazma.
+aliases:
+  next.js: nextjs
+  "next js": nextjs
+  makine-ogrenmesi: machine-learning
+  makine-öğrenmesi: machine-learning
+  goruntu-isleme: computer-vision
+  görüntü-işleme: computer-vision
+  bilgisayarli-goru: computer-vision
+  bilgisayarlı-görü: computer-vision
+  derin-ogrenme: deep-learning
+  derin-öğrenme: deep-learning
+  dogal-dil-isleme: nlp
+  doğal-dil-işleme: nlp
+  buyuk-dil-modelleri: llm
+  büyük-dil-modelleri: llm
+  mssql: sql-server
+  ms-sql: sql-server
+  stt: speech-to-text
+  mikroservis: microservices
+  mikroservisler: microservices
+  takim-liderligi: team-lead
+  takım-liderliği: team-lead
+  ci/cd: ci-cd
+  odeme-entegrasyonu: payment-integration
+  ödeme-entegrasyonu: payment-integration

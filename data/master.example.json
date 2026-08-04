@@ -1,0 +1,442 @@
+{
+  "picture": {
+    "hidden": true,
+    "url": "",
+    "size": 80,
+    "rotation": 0,
+    "aspectRatio": 1,
+    "borderRadius": 0,
+    "borderColor": "rgba(0, 0, 0, 0.5)",
+    "borderWidth": 0,
+    "shadowColor": "rgba(0, 0, 0, 0.5)",
+    "shadowWidth": 0
+  },
+  "basics": {
+    "name": "Ada Örnek",
+    "headline": "Yazılım Mühendisi",
+    "email": "ada@example.com",
+    "phone": "+90 500 000 0000",
+    "location": "İstanbul, Türkiye",
+    "website": { "url": "", "label": "", "inlineLink": false },
+    "customFields": [
+      {
+        "id": "cf-github",
+        "icon": "github-logo",
+        "text": "github.com/ada-ornek",
+        "link": "https://github.com/ada-ornek"
+      },
+      {
+        "id": "cf-linkedin",
+        "icon": "linkedin-logo",
+        "text": "linkedin.com/in/ada-ornek",
+        "link": "https://www.linkedin.com/in/ada-ornek"
+      }
+    ]
+  },
+  "summary": {
+    "title": "Özet",
+    "icon": "",
+    "columns": 1,
+    "hidden": false,
+    "keepTogether": false,
+    "startOnNewPage": false,
+    "content": "<p>Örnek özet. Gerçek özet <code>data/master.json</code> içinde yaşar; bu dosya yalnızca şemayı ve <code>x_meta</code> sözleşmesini gösterir.</p>"
+  },
+  "sections": {
+    "profiles": {
+      "title": "",
+      "icon": "",
+      "columns": 1,
+      "hidden": true,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": [
+        {
+          "id": "pr-github",
+          "hidden": false,
+          "icon": "github-logo",
+          "iconColor": "",
+          "network": "GitHub",
+          "username": "ada-ornek",
+          "website": { "url": "https://github.com/ada-ornek", "label": "", "inlineLink": false }
+        }
+      ]
+    },
+    "experience": {
+      "title": "Deneyim",
+      "icon": "",
+      "columns": 1,
+      "hidden": false,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": [
+        {
+          "id": "exp-ornek-ai",
+          "hidden": false,
+          "company": "Örnek Teknoloji",
+          "position": "Yazılım Mühendisi (AI)",
+          "location": "",
+          "period": "Ocak 2024 – Devam Ediyor",
+          "website": { "url": "", "label": "", "inlineLink": false },
+          "description": "",
+          "roles": [],
+          "x_meta": {
+            "tags": ["python", "computer-vision", "data-pipeline"],
+            "seniority": "mid",
+            "lang": "tr",
+            "always_include": true
+          },
+          "x_bullets": [
+            {
+              "id": "exp-ornek-ai.cv-pipeline.tr",
+              "text": "Görüntü işleme modellerini uçtan uca bir veri hattına bağlayarak 8 saatlik kaydı 12 dakikada işleyen bir boru hattı kurdu.",
+              "x_meta": {
+                "tags": ["computer-vision", "python", "data-pipeline"],
+                "impact": "8 saatlik kaydı 12 dakikada işleyen boru hattı",
+                "lang": "tr"
+              }
+            },
+            {
+              "id": "exp-ornek-ai.cv-pipeline.en",
+              "text": "Built an end-to-end computer-vision pipeline that processes 8 hours of footage in 12 minutes.",
+              "x_meta": {
+                "tags": ["computer-vision", "python", "data-pipeline"],
+                "impact": "processes 8 hours of footage in 12 minutes",
+                "lang": "en"
+              }
+            },
+            {
+              "id": "exp-ornek-ai.backend.tr",
+              "text": "Modelleri FastAPI servisleri arkasına alarak üç ekibin ortak kullandığı bir REST arayüzü çıkardı.",
+              "x_meta": {
+                "tags": ["fastapi", "rest-api", "microservices"],
+                "impact": "üç ekibin ortak kullandığı REST arayüzü",
+                "lang": "tr"
+              }
+            },
+            {
+              "id": "exp-ornek-ai.backend.en",
+              "text": "Exposed the models behind FastAPI services, giving three teams a shared REST interface.",
+              "x_meta": {
+                "tags": ["fastapi", "rest-api", "microservices"],
+                "impact": "a shared REST interface used by three teams",
+                "lang": "en"
+              }
+            }
+          ]
+        },
+        {
+          "id": "exp-ornek-erp",
+          "hidden": false,
+          "company": "Örnek Yazılım",
+          "position": "Backend Geliştirici",
+          "location": "",
+          "period": "Haziran 2022 – Aralık 2023",
+          "website": { "url": "", "label": "", "inlineLink": false },
+          "description": "",
+          "roles": [],
+          "x_meta": {
+            "tags": ["erp", "b2b", "sql-server"],
+            "seniority": "junior",
+            "lang": "tr"
+          },
+          "x_bullets": [
+            {
+              "id": "exp-ornek-erp.multitenant.tr",
+              "text": "Çok kiracılı bir B2B portalını salt-okunur ERP erişimi ve ayrı bir uygulama veritabanı üzerine kurdu; dört bayi aynı kurulumdan hizmet aldı.",
+              "x_meta": {
+                "tags": ["multi-tenant", "b2b", "erp", "sql-server"],
+                "impact": "aynı kurulumdan hizmet alan dört bayi",
+                "lang": "tr"
+              }
+            },
+            {
+              "id": "exp-ornek-erp.multitenant.en",
+              "text": "Built a multi-tenant B2B portal on read-only ERP access plus a separate application database, serving four dealers from one deployment.",
+              "x_meta": {
+                "tags": ["multi-tenant", "b2b", "erp", "sql-server"],
+                "impact": "four dealers served from a single deployment",
+                "lang": "en"
+              }
+            },
+            {
+              "id": "exp-ornek-erp.payments.tr",
+              "text": "Ödeme sağlayıcısı entegrasyonunu webhook doğrulamasıyla birlikte yazdı ve sipariş geri yazımını idempotent hale getirdi.",
+              "x_meta": {
+                "tags": ["payment-integration", "webhook", "order-management"],
+                "lang": "tr"
+              }
+            },
+            {
+              "id": "exp-ornek-erp.payments.en",
+              "text": "Implemented the payment-provider integration with webhook verification and made order write-back idempotent.",
+              "x_meta": {
+                "tags": ["payment-integration", "webhook", "order-management"],
+                "lang": "en"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "education": {
+      "title": "Eğitim",
+      "icon": "",
+      "columns": 1,
+      "hidden": false,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": [
+        {
+          "id": "edu-ornek",
+          "hidden": false,
+          "school": "Örnek Üniversitesi",
+          "degree": "Lisans",
+          "area": "Yazılım Mühendisliği",
+          "grade": "",
+          "location": "",
+          "period": "2018-2022",
+          "website": { "url": "", "label": "", "inlineLink": false },
+          "description": ""
+        }
+      ]
+    },
+    "projects": {
+      "title": "Projeler",
+      "icon": "",
+      "columns": 1,
+      "hidden": false,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": [
+        {
+          "id": "proj-ornek-cli",
+          "hidden": false,
+          "name": "Örnek CLI",
+          "period": "2024 - Devam Ediyor",
+          "website": { "url": "", "label": "", "inlineLink": false },
+          "description": "",
+          "x_meta": { "tags": ["python", "open-source", "testing"], "lang": "tr" },
+          "x_bullets": [
+            {
+              "id": "proj-ornek-cli.tests.tr",
+              "text": "Testsiz devralınan bir kütüphaneyi ağa çıkmayan 70 testin altına aldı ve eşzamanlılık hatalarını kapattı.",
+              "x_meta": {
+                "tags": ["testing", "concurrency", "open-source"],
+                "impact": "ağa çıkmayan 70 test",
+                "lang": "tr"
+              }
+            },
+            {
+              "id": "proj-ornek-cli.tests.en",
+              "text": "Brought an inherited, untested library under 70 network-free tests and fixed its concurrency bugs.",
+              "x_meta": {
+                "tags": ["testing", "concurrency", "open-source"],
+                "impact": "70 network-free tests",
+                "lang": "en"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "skills": {
+      "title": "Yetenekler",
+      "icon": "",
+      "columns": 4,
+      "hidden": false,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": [
+        {
+          "id": "sk-python",
+          "hidden": false,
+          "icon": "",
+          "iconColor": "",
+          "name": "Python",
+          "proficiency": "",
+          "level": 0,
+          "keywords": [],
+          "x_meta": { "tags": ["python"], "lang": "tr", "always_include": true }
+        },
+        {
+          "id": "sk-fastapi",
+          "hidden": false,
+          "icon": "",
+          "iconColor": "",
+          "name": "FastAPI",
+          "proficiency": "",
+          "level": 0,
+          "keywords": [],
+          "x_meta": { "tags": ["fastapi", "rest-api"], "lang": "tr" }
+        },
+        {
+          "id": "sk-cv-tr",
+          "hidden": false,
+          "icon": "",
+          "iconColor": "",
+          "name": "Bilgisayarlı Görü",
+          "proficiency": "",
+          "level": 0,
+          "keywords": [],
+          "x_meta": { "tags": ["computer-vision"], "lang": "tr" }
+        },
+        {
+          "id": "sk-cv-en",
+          "hidden": false,
+          "icon": "",
+          "iconColor": "",
+          "name": "Computer Vision",
+          "proficiency": "",
+          "level": 0,
+          "keywords": [],
+          "x_meta": { "tags": ["computer-vision"], "lang": "en" }
+        },
+        {
+          "id": "sk-sqlserver",
+          "hidden": false,
+          "icon": "",
+          "iconColor": "",
+          "name": "SQL Server (MSSQL)",
+          "proficiency": "",
+          "level": 0,
+          "keywords": [],
+          "x_meta": { "tags": ["sql-server", "sql"], "lang": "tr" }
+        },
+        {
+          "id": "sk-docker",
+          "hidden": false,
+          "icon": "",
+          "iconColor": "",
+          "name": "Docker",
+          "proficiency": "",
+          "level": 0,
+          "keywords": [],
+          "x_meta": { "tags": ["docker", "deployment"], "lang": "tr" }
+        }
+      ]
+    },
+    "languages": {
+      "title": "Diller",
+      "icon": "",
+      "columns": 6,
+      "hidden": false,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": [
+        { "id": "lang-tr", "hidden": false, "language": "Türkçe", "fluency": "Anadil", "level": 0 },
+        {
+          "id": "lang-en",
+          "hidden": false,
+          "language": "İngilizce",
+          "fluency": "Konuşma",
+          "level": 0
+        }
+      ]
+    },
+    "interests": {
+      "title": "",
+      "icon": "",
+      "columns": 1,
+      "hidden": true,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": []
+    },
+    "awards": {
+      "title": "",
+      "icon": "",
+      "columns": 1,
+      "hidden": true,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": []
+    },
+    "certifications": {
+      "title": "",
+      "icon": "",
+      "columns": 1,
+      "hidden": true,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": []
+    },
+    "publications": {
+      "title": "",
+      "icon": "",
+      "columns": 1,
+      "hidden": true,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": []
+    },
+    "volunteer": {
+      "title": "",
+      "icon": "",
+      "columns": 1,
+      "hidden": true,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": []
+    },
+    "references": {
+      "title": "",
+      "icon": "",
+      "columns": 1,
+      "hidden": true,
+      "keepTogether": false,
+      "startOnNewPage": false,
+      "items": []
+    }
+  },
+  "customSections": [],
+  "metadata": {
+    "template": "bronzor",
+    "layout": {
+      "sidebarWidth": 10,
+      "pages": [
+        { "fullWidth": true, "main": ["profiles", "summary", "experience"], "sidebar": [] },
+        {
+          "fullWidth": false,
+          "main": ["references", "certifications", "volunteer", "interests", "publications", "awards"],
+          "sidebar": ["projects", "skills", "education", "languages"]
+        }
+      ]
+    },
+    "page": {
+      "gapX": 4,
+      "gapY": 6,
+      "marginX": 18,
+      "marginY": 20,
+      "format": "a4",
+      "locale": "tr-TR",
+      "hideLinkUnderline": false,
+      "hideIcons": false,
+      "hideSectionIcons": true
+    },
+    "design": {
+      "level": { "icon": "star", "type": "circle" },
+      "colors": {
+        "primary": "rgb(0, 0, 0)",
+        "text": "rgba(0, 0, 0, 1)",
+        "background": "rgba(255, 255, 255, 1)"
+      }
+    },
+    "typography": {
+      "body": {
+        "fontFamily": "IBM Plex Serif",
+        "fontWeights": ["400", "500"],
+        "fontSize": 10,
+        "lineHeight": 1.5
+      },
+      "heading": {
+        "fontFamily": "IBM Plex Serif",
+        "fontWeights": ["600"],
+        "fontSize": 14,
+        "lineHeight": 1.5
+      }
+    },
+    "notes": "",
+    "styleRules": []
+  }
+}
