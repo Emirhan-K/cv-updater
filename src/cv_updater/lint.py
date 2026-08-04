@@ -60,6 +60,11 @@ DEGREE_WORDS = (
 GITHUB_URL = re.compile(r"github\.com/[\w.-]+", re.IGNORECASE)
 LINKEDIN_URL = re.compile(r"linkedin\.com/in/[\w.-]+", re.IGNORECASE)
 
+#: `TODO.md` doldurulmamış olguları köşeli parantezle işaretliyor ("[terfi tarihi]",
+#: "[X] kişilik ekip"). Bunlar CV'ye asla gitmemeli — ve **uydurulmamalı** da:
+#: kural, eksik olguyu sessizce geçmek yerine gürültülü şekilde durduruyor.
+_PLACEHOLDER = re.compile(r"\[[^\]]{1,60}\]")
+
 MIN_TAGGED_SKILLS = 20
 MIN_EXPERIENCES = 3
 MIN_BULLETS_PER_EXPERIENCE = 4
@@ -290,6 +295,24 @@ def check_paren_spacing(resume: Resume) -> Iterator[Finding]:
             )
 
 
+def check_placeholders(resume: Resume) -> Iterator[Finding]:
+    """Doldurulmamış `[köşeli parantez]` yer tutucuları.
+
+    Bilinmeyen bir olguyu (terfi tarihi, ekip büyüklüğü) uydurmak dürüstlük
+    guardrail'ini veri katmanında delerdi. Yer tutucu bırakmak doğru davranış;
+    bu kural onu CV'ye sızmadan yakalar.
+    """
+    for path, text in iter_prose(resume):
+        for match in _PLACEHOLDER.finditer(strip_html(text)):
+            yield Finding(
+                "error",
+                "content.placeholder",
+                path,
+                f"Doldurulmamış yer tutucu: {match.group()}",
+                "Gerçek değeri yaz — tahmin etme, süper set doğruluk kaynağı.",
+            )
+
+
 def check_tags(resume: Resume, vocabulary: TagVocabulary) -> Iterator[Finding]:
     """Etiketler kontrollü sözlükten mi, ve etiketsiz madde var mı?"""
     for section_name in Sections.model_fields:
@@ -444,6 +467,7 @@ CHECKS = (
     check_education_degree,
     check_ligatures,
     check_paren_spacing,
+    check_placeholders,
     check_ids,
     check_superset_size,
     check_language_coverage,

@@ -12,6 +12,7 @@ from cv_updater.lint import (
     check_language_coverage,
     check_ligatures,
     check_paren_spacing,
+    check_placeholders,
     check_superset_size,
     check_tags,
     check_visible_profile_urls,
@@ -190,6 +191,25 @@ def test_code_blocks_do_not_trigger_paren_rule() -> None:
 def test_strip_html_removes_tags_and_code() -> None:
     assert "<p>" not in strip_html("<p>merhaba</p>")
     assert "open(" not in strip_html("<code>open(x)</code>")
+
+
+def test_placeholder_is_an_error() -> None:
+    """Bilinmeyen olgu uydurulmamalı; yer tutucu bırakılmalı ve lint onu yakalamalı."""
+    resume = Resume()
+    resume.sections.experience.items = [
+        ExperienceItem(id="x", company="Örnek", period="[terfi tarihi] – Devam Ediyor")
+    ]
+    findings = list(check_placeholders(resume))
+    assert findings and findings[0].rule == "content.placeholder"
+    assert "[terfi tarihi]" in findings[0].message
+
+
+def test_no_placeholder_passes() -> None:
+    resume = Resume()
+    resume.sections.experience.items = [
+        ExperienceItem(id="x", company="Örnek", period="Ocak 2026 – Devam Ediyor")
+    ]
+    assert not list(check_placeholders(resume))
 
 
 def test_style_values_are_not_prose() -> None:

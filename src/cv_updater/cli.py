@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from cv_updater import __version__
@@ -85,13 +86,15 @@ def _print_report(report: LintReport, path: Path) -> None:
         group: list[Finding] = [f for f in report.findings if f.level == level]
         for finding in group:
             style = _LEVEL_STYLE[level]
+            # Bulgu metinleri köşeli parantez içerebiliyor ("[terfi tarihi]") ve rich
+            # bunu biçim etiketi sanıp yutuyor — kaçırmadan yazdır.
             console.print(
                 f"[{style}]{_LEVEL_LABEL[level]}[/{style}] "
-                f"[dim]{finding.rule}[/dim] {finding.where}"
+                f"[dim]{escape(finding.rule)}[/dim] {escape(finding.where)}"
             )
-            console.print(f"    {finding.message}")
+            console.print(f"    {escape(finding.message)}")
             if finding.fix_hint:
-                console.print(f"    [dim]→ {finding.fix_hint}[/dim]")
+                console.print(f"    [dim]→ {escape(finding.fix_hint)}[/dim]")
 
 
 @app.command()
