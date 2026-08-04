@@ -6,9 +6,14 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 from rich.console import Console
+from rich.table import Table
 
 from cv_updater import __version__
+from cv_updater.lint import Finding, LintReport, fix_ligatures, lint
+from cv_updater.models.resume import Resume
+from cv_updater.paths import MASTER_JSON
 
 app = typer.Typer(
     name="cv-updater",
@@ -18,6 +23,9 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+_LEVEL_STYLE = {"error": "bold red", "warning": "yellow", "info": "dim cyan"}
+_LEVEL_LABEL = {"error": "HATA", "warning": "UYARI", "info": "bilgi"}
 
 
 def _version_callback(value: bool) -> None:
@@ -41,6 +49,51 @@ def main(
     """Ortak seçenekler."""
 
 
+def _load(path: Path) -> Resume:
+    """master.json'ı okur; şema hatasında okunur bir mesajla çıkar."""
+    if not path.exists():
+        console.print(f"[bold red]Dosya yok:[/bold red] {path}")
+        console.print(
+            "[dim]data/master.example.json'ı kopyalayarak başlayabilirsin "
+            "(master.json gitignore'da).[/dim]"
+        )
+        raise typer.Exit(code=2)
+
+    try:
+        return Resume.model_validate_json(path.read_text(encoding="utf-8"))
+    except ValidationError as exc:
+        console.print(f"[bold red]Şema hatası:[/bold red] {path}")
+        for error in exc.errors()[:20]:
+            where = ".".join(str(part) for part in error["loc"])
+            console.print(f"  [red]•[/red] {where}: {error['msg']}")
+        raise typer.Exit(code=2) from exc
+
+
+def _print_report(report: LintReport, path: Path) -> None:
+    stats = Table(title=f"{path.name} — süper set", title_style="bold", show_header=False)
+    stats.add_column(style="dim")
+    stats.add_column(justify="right")
+    for key, value in report.stats.items():
+        stats.add_row(key, str(value))
+    console.print(stats)
+
+    if not report.findings:
+        return
+
+    console.print()
+    for level in ("error", "warning", "info"):
+        group: list[Finding] = [f for f in report.findings if f.level == level]
+        for finding in group:
+            style = _LEVEL_STYLE[level]
+            console.print(
+                f"[{style}]{_LEVEL_LABEL[level]}[/{style}] "
+                f"[dim]{finding.rule}[/dim] {finding.where}"
+            )
+            console.print(f"    {finding.message}")
+            if finding.fix_hint:
+                console.print(f"    [dim]→ {finding.fix_hint}[/dim]")
+
+
 @app.command()
 def validate(
     master: Annotated[
@@ -51,15 +104,45 @@ def validate(
             help="Doğrulanacak master.json (varsayılan: data/master.json).",
         ),
     ] = None,
+    fix: Annotated[
+        bool,
+        typer.Option("--fix", help="Otomatik düzeltilebilenleri düzelt (ligatürler)."),
+    ] = False,
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="Uyarıları da hata say."),
+    ] = False,
 ) -> None:
     """master.json'ı şemaya karşı doğrula ve içerik lint'i çalıştır.
 
-    LLM kullanmaz, API anahtarı gerektirmez.
+    LLM kullanmaz, ağa çıkmaz, API anahtarı gerektirmez.
     """
-    console.print("[yellow]validate henüz uygulanmadı (issue 03).[/yellow]")
-    if master is not None:
-        console.print(f"Hedef: {master}")
-    raise typer.Exit(code=1)
+    path = master or MASTER_JSON
+
+    if fix and path.exists():
+        raw = path.read_text(encoding="utf-8")
+        fixed, count = fix_ligatures(raw)
+        if count:
+            path.write_text(fixed, encoding="utf-8")
+            console.print(f"[green]✓[/green] {count} ligatür karakteri düzeltildi.")
+
+    resume = _load(path)
+    report = lint(resume)
+    _print_report(report, path)
+
+    error_count = len(report.errors)
+    warning_count = len(report.warnings)
+    console.print()
+
+    if error_count == 0 and warning_count == 0:
+        console.print("[bold green]✓ Sıfır hata, sıfır uyarı.[/bold green]")
+        return
+
+    summary = f"{error_count} hata, {warning_count} uyarı"
+    if error_count or (strict and warning_count):
+        console.print(f"[bold red]✗ {summary}[/bold red]")
+        raise typer.Exit(code=1)
+    console.print(f"[yellow]⚠ {summary}[/yellow] [dim](--strict ile hata sayılır)[/dim]")
 
 
 @app.command()
