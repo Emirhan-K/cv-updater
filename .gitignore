@@ -3,3 +3,22 @@
 # Claude Code (local-only)
 CLAUDE.md
 graphify-out/
+
+# Gizli / kişisel
+.env
+data/master.json
+*.pdf
+
+# Üretilen çıktı
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
