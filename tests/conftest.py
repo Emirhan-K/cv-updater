@@ -1,13 +1,50 @@
-"""Paylaşılan fixture'lar. Hiçbir test ağa çıkmaz."""
+"""Paylaşılan fixture'lar. Hiçbir test ağa çıkmaz — bu dosya bunu zorluyor."""
 
 from __future__ import annotations
 
+import socket
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+#: LLM yapılandırmasını taşıyan ortam değişkenleri. Testler bunları görmemeli:
+#: geliştiricinin `.env`'i sızarsa test süiti sessizce ağa çıkar ve yavaşlar.
+_LLM_ENV = (
+    "LLM_API_KEY",
+    "LLM_BASE_URL",
+    "LLM_MODEL",
+    "LLM_STRUCTURED_MODE",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+)
+
+
+@pytest.fixture(autouse=True)
+def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ağı ve `.env` yüklemesini kapatır.
+
+    İki katmanlı: (1) anahtarlar ortamdan silinir ve `.env` okunmaz, (2) soket
+    bağlantısı komple bloklanır. İkincisi güvenlik ağı — birinci katmanı atlayan
+    bir kod yolu eklendiğinde test yavaşlayarak değil, hata vererek uyarsın.
+    """
+    for variable in _LLM_ENV:
+        monkeypatch.delenv(variable, raising=False)
+
+    # `cli` bu ismi kendi ad alanına aldı; iki referansı da kapatmak gerekiyor.
+    monkeypatch.setattr("cv_updater.llm.load_dotenv_once", lambda: None)
+    monkeypatch.setattr("cv_updater.cli.load_dotenv_once", lambda: None)
+
+    def _blocked(*args: Any, **kwargs: Any) -> None:
+        raise RuntimeError(
+            "Test ağa çıkmaya çalıştı. LLM adımları sahte istemciyle test edilir "
+            "(bkz. tests/test_analyze_job.py)."
+        )
+
+    monkeypatch.setattr(socket.socket, "connect", _blocked)
+    monkeypatch.setattr(socket.socket, "connect_ex", _blocked)
 
 
 @pytest.fixture(scope="session")

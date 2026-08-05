@@ -13,8 +13,21 @@ from rich.table import Table
 
 from cv_updater import __version__
 from cv_updater.lint import Finding, LintReport, fix_ligatures, lint
+from cv_updater.llm import (
+    MissingAPIKeyError,
+    StructuredOutputError,
+    has_api_key,
+    load_dotenv_once,
+)
+from cv_updater.models.job import JobAnalysis
 from cv_updater.models.resume import Resume
 from cv_updater.paths import MASTER_JSON
+from cv_updater.steps.analyze_job import (
+    analyze,
+    latest_analysis,
+    read_analysis,
+    write_analysis,
+)
 from cv_updater.steps.intake import (
     IntakeError,
     new_run_dir,
@@ -57,6 +70,9 @@ def main(
     ] = False,
 ) -> None:
     """Ortak seçenekler."""
+    # `.env` her komut için yüklenir; `validate` yine anahtarsız çalışır, sadece
+    # tanımlıysa ortama girer.
+    load_dotenv_once()
 
 
 def _load(path: Path) -> Resume:
@@ -178,11 +194,19 @@ def tailor(
         bool,
         typer.Option("--yes", "-y", help="Kısa ilan uyarısında soru sorma."),
     ] = False,
+    no_llm: Annotated[
+        bool,
+        typer.Option(
+            "--no-llm",
+            help="LLM'e gitme; en son üretilen job.json'ı yeniden kullan.",
+        ),
+    ] = False,
 ) -> None:
     """İlana göre tailored.json + match_report.md üret (LLM adımı).
 
-    Şu an issue 04 kapsamı çalışıyor: ilan okunur, normalize edilir ve
-    `out/<slug>/` altına yazılır. Analiz (05) ve sonrası eklenecek.
+    Şu an issue 04-05 kapsamı çalışıyor: ilan okunur, normalize edilir,
+    `JobPosting` olarak yapılandırılır ve `out/<slug>/` altına yazılır.
+    Ön filtre (06) ve uyarlama (07-09) eklenecek.
     """
     try:
         src = read_source(source, paste=paste)
@@ -214,7 +238,77 @@ def tailor(
 
     console.print(f"[green]✓[/green] {escape(str(raw_path))}")
     console.print(f"[green]✓[/green] {escape(str(clean_path))}")
-    console.print("\n[yellow]Analiz adımı henüz uygulanmadı (issue 05).[/yellow]")
+
+    analysis = _analyze_step(result.text, source_kind=src.kind, no_llm=no_llm)
+    job_path = write_analysis(run_dir, analysis)
+    console.print(f"[green]✓[/green] {escape(str(job_path))}")
+
+    _print_analysis(analysis)
+    console.print("\n[yellow]Ön filtre ve uyarlama henüz uygulanmadı (issue 06-09).[/yellow]")
+
+
+def _analyze_step(clean_text: str, *, source_kind: str, no_llm: bool) -> JobAnalysis:
+    """İlanı yapılandırır — ya LLM'e sorarak ya da öncekini yeniden kullanarak."""
+    if no_llm:
+        previous = latest_analysis()
+        if previous is None:
+            console.print(
+                "[bold red]✗[/bold red] --no-llm için yeniden kullanılacak bir job.json yok. "
+                "Önce bir kez LLM ile çalıştır."
+            )
+            raise typer.Exit(code=2)
+
+        analysis = read_analysis(previous)
+        analysis.reused_from = previous.parent.name
+        console.print(
+            f"[dim]--no-llm: {escape(previous.parent.name)} çalıştırmasındaki analiz "
+            "yeniden kullanılıyor. Aynı ilan olduğundan emin ol.[/dim]"
+        )
+        return analysis
+
+    if not has_api_key():
+        console.print(f"[bold red]✗[/bold red] {escape(str(MissingAPIKeyError()))}")
+        raise typer.Exit(code=2)
+
+    with console.status("[dim]ilan analiz ediliyor…[/dim]"):
+        try:
+            return analyze(clean_text, source_kind=source_kind)
+        except StructuredOutputError as exc:
+            console.print(f"[bold red]✗ Analiz başarısız:[/bold red] {escape(str(exc))}")
+            raise typer.Exit(code=1) from exc
+
+
+def _print_analysis(analysis: JobAnalysis) -> None:
+    """Analizin özetini yazdırır — doğru okunduğu bir bakışta görülsün."""
+    posting = analysis.posting
+
+    table = Table(title="ilan analizi", title_style="bold", show_header=False)
+    table.add_column(style="dim")
+    table.add_column()
+    table.add_row("şirket", escape(posting.company or "—"))
+    table.add_row("pozisyon", escape(posting.title))
+    table.add_row("dil", posting.language)
+    table.add_row("kıdem", posting.seniority)
+    table.add_row("konum", escape(posting.location or "—"))
+    table.add_row("çalışma biçimi", posting.work_mode)
+    table.add_row("alan", escape(posting.domain or "—"))
+    must = sum(1 for requirement in posting.requirements if requirement.kind == "must")
+    table.add_row("gereksinim", f"{must} zorunlu, {len(posting.requirements) - must} tercih")
+    table.add_row("etiket", str(len(analysis.keywords.tags)))
+    console.print(table)
+
+    if analysis.keywords.tags:
+        console.print(f"[dim]etiketler:[/dim] {escape(', '.join(analysis.keywords.tags))}")
+    if analysis.keywords.unmapped:
+        console.print(
+            f"[yellow]sözlükte yok:[/yellow] {escape(', '.join(analysis.keywords.unmapped))}"
+        )
+        console.print("[dim]→ karşılığı varsa data/tags.yaml'a alias olarak ekle.[/dim]")
+    if analysis.keywords.dropped:
+        console.print(
+            f"[bold red]ilanda bulunamadı, atıldı:[/bold red] "
+            f"{escape(', '.join(analysis.keywords.dropped))}"
+        )
 
 
 @app.command()
