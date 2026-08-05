@@ -15,6 +15,15 @@ from cv_updater import __version__
 from cv_updater.lint import Finding, LintReport, fix_ligatures, lint
 from cv_updater.models.resume import Resume
 from cv_updater.paths import MASTER_JSON
+from cv_updater.steps.intake import (
+    IntakeError,
+    new_run_dir,
+    read_source,
+    slug_hint,
+    slugify,
+    write_run_files,
+)
+from cv_updater.steps.normalize import MIN_MEANINGFUL_CHARS, normalize
 
 app = typer.Typer(
     name="cv-updater",
@@ -150,13 +159,62 @@ def validate(
 
 @app.command()
 def tailor(
-    posting: Annotated[Path | None, typer.Argument(help="İlan metni dosyası (issue 04).")] = None,
+    source: Annotated[
+        str | None,
+        typer.Argument(
+            help="İlan dosyası, stdin için '-', ya da --paste ile editör.",
+            metavar="[KAYNAK]",
+        ),
+    ] = None,
+    paste: Annotated[
+        bool,
+        typer.Option("--paste", help="$EDITOR aç, kaydedince devam et."),
+    ] = False,
+    slug: Annotated[
+        str | None,
+        typer.Option("--slug", help="Çıktı dizininin adı (zaman damgası yine eklenir)."),
+    ] = None,
+    yes: Annotated[
+        bool,
+        typer.Option("--yes", "-y", help="Kısa ilan uyarısında soru sorma."),
+    ] = False,
 ) -> None:
-    """İlana göre tailored.json + match_report.md üret (LLM adımı)."""
-    console.print("[yellow]tailor henüz uygulanmadı (issue 04-09).[/yellow]")
-    if posting is not None:
-        console.print(f"İlan: {posting}")
-    raise typer.Exit(code=1)
+    """İlana göre tailored.json + match_report.md üret (LLM adımı).
+
+    Şu an issue 04 kapsamı çalışıyor: ilan okunur, normalize edilir ve
+    `out/<slug>/` altına yazılır. Analiz (05) ve sonrası eklenecek.
+    """
+    try:
+        src = read_source(source, paste=paste)
+    except IntakeError as exc:
+        console.print(f"[bold red]✗[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=2) from exc
+
+    result = normalize(src.text)
+
+    if result.is_short:
+        console.print(
+            f"[yellow]⚠ İlan çok kısa[/yellow] ({len(result.text)} karakter, "
+            f"eşik {MIN_MEANINGFUL_CHARS}). Yanlış pano ya da eksik kopyalama olabilir."
+        )
+        if not yes and not typer.confirm("Yine de devam edilsin mi?", default=False):
+            console.print("[dim]İptal edildi.[/dim]")
+            raise typer.Exit(code=1)
+
+    hint = slugify(slug) if slug else slug_hint(src, result.text)
+    run_dir = new_run_dir(hint)
+    raw_path, clean_path = write_run_files(run_dir, src.text, result.text)
+
+    table = Table(title=f"ilan alındı — {src.kind}", title_style="bold", show_header=False)
+    table.add_column(style="dim")
+    table.add_column(justify="right")
+    for key, value in result.stats.items():
+        table.add_row(key, str(value))
+    console.print(table)
+
+    console.print(f"[green]✓[/green] {escape(str(raw_path))}")
+    console.print(f"[green]✓[/green] {escape(str(clean_path))}")
+    console.print("\n[yellow]Analiz adımı henüz uygulanmadı (issue 05).[/yellow]")
 
 
 @app.command()
