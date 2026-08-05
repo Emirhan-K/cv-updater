@@ -31,8 +31,16 @@ cd cv-updater
 uv sync
 ```
 
-LLM adımları için `ANTHROPIC_API_KEY` gerekir; `.env.example`'ı `.env` olarak kopyala.
-`--help` ve `validate` anahtarsız çalışır.
+LLM adımları için `.env.example`'ı `.env` olarak kopyala. İki seçenek var: yerel bir gateway
+(`LLM_BASE_URL` + `LLM_API_KEY`) ya da doğrudan Anthropic (`ANTHROPIC_API_KEY`). `--help` ve
+`validate` anahtarsız çalışır.
+
+## Durum
+
+Faz 0 ve Faz 1 tamam (issue 01-05): süper set doğrulanıyor, ilan üç yoldan alınıp normalize
+ediliyor ve yapılandırılmış `job.json`'a çevriliyor. Sırada ön filtre (06) ve dürüstlük
+guardrail'i (07). Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
+[`docs/PIPELINE.md`](docs/PIPELINE.md).
 
 ## Komutlar
 
@@ -48,9 +56,18 @@ LLM adımları için `ANTHROPIC_API_KEY` gerekir; `.env.example`'ı `.env` olara
 
 ```bash
 uv run cv-updater validate                  # süper set sağlıklı mı?
-uv run cv-updater tailor ilanlar/acme.txt   # out/tailored.json + out/match_report.md
+
+# ilanı üç yoldan biriyle ver:
+Get-Clipboard | uv run cv-updater tailor -  # panodan (PowerShell)
+uv run cv-updater tailor ilanlar/acme.txt   # dosyadan
+uv run cv-updater tailor --paste            # $EDITOR açılır
+
 uv run cv-updater check out/cv.pdf          # PDF'te anahtar kelimeler hayatta kaldı mı?
 ```
+
+Her çalıştırma `out/<slug>-<zaman damgası>/` altına yazar; önceki çıktı asla ezilmez.
+Sonraki adımlar üzerinde çalışırken `--no-llm` en son analizi yeniden kullanır ve API'ye
+gitmez.
 
 ## Geliştirme
 
