@@ -129,3 +129,20 @@ aliases:
   ci/cd: ci-cd
   odeme-entegrasyonu: payment-integration
   ödeme-entegrasyonu: payment-integration
+
+  # Aşağıdakiler issue 05'in üç gerçek ilan denemesinde `unmapped`'a düştü
+  # (2026-08-06). Sözlük tam da böyle büyüyor: ilanın kullandığı yazımı ekle.
+  vektor-veritabanlari: vector-search
+  vektör-veritabanları: vector-search
+  vector-database: vector-search
+  vector-databases: vector-search
+  prompt-muhendisligi: prompt-engineering
+  prompt-mühendisliği: prompt-engineering
+  # Türkiye'deki iki ödeme sağlayıcısı — ilanlarda marka adıyla geçiyorlar.
+  iyzico: payment-integration
+  paytr: payment-integration
+  # CV tarafında ayrı etiketleri yok; ikisi de computer-vision'ın altında.
+  object-detection: computer-vision
+  nesne-tespiti: computer-vision
+  segmentation: computer-vision
+  segmentasyon: computer-vision

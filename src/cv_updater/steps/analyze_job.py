@@ -195,18 +195,33 @@ def read_analysis(path: Path) -> JobAnalysis:
     return JobAnalysis.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def latest_analysis(root: Path | None = None) -> Path | None:
-    """En son yazılmış `job.json` — `--no-llm` bunu yeniden kullanır.
+#: Çalıştırma dizininin sonundaki zaman damgası: `<slug>-20260806-005545[-2]`.
+_RUN_STAMP = re.compile(r"(\d{8}-\d{6})(?:-(\d+))?$")
 
-    Çalıştırma dizinleri zaman damgalı olduğu için ada göre sıralamak yeterli;
-    dosya sistemi zaman damgalarına güvenmeye gerek yok.
+
+def _run_sort_key(run_dir: Path) -> tuple[str, int]:
+    """Çalıştırma dizinlerini gerçek zamana göre sıralar.
+
+    Dizin **adına** göre sıralamak yanlış: adın başında slug var, o yüzden
+    "novatek-...-005456" alfabetik olarak "helix-...-005545"in sonrasına düşüyor
+    ve `--no-llm` en yeni yerine en alfabetik olanı seçiyordu. Zaman damgası
+    ISO benzeri olduğu için metin karşılaştırması doğru sırayı veriyor.
     """
+    match = _RUN_STAMP.search(run_dir.name)
+    if match is None:
+        # Elle oluşturulmuş, damgasız dizin: en eski say.
+        return ("", 0)
+    return (match.group(1), int(match.group(2) or 0))
+
+
+def latest_analysis(root: Path | None = None) -> Path | None:
+    """En son yazılmış `job.json` — `--no-llm` bunu yeniden kullanır."""
     base = root or OUT_DIR
     if not base.is_dir():
         return None
 
     candidates = sorted(
         (path for path in base.glob(f"*/{JOB_FILENAME}") if path.is_file()),
-        key=lambda path: path.parent.name,
+        key=lambda path: _run_sort_key(path.parent),
     )
     return candidates[-1] if candidates else None

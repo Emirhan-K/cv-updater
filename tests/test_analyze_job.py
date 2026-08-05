@@ -272,6 +272,70 @@ class TestLatestAnalysis:
         assert latest is not None
         assert latest.parent.name == "acme-20260806-120000"
 
+    def test_different_slugs_are_ordered_by_time_not_alphabet(self, tmp_path: Path) -> None:
+        """Regresyon: ada göre sıralayınca 'novatek-...005456' en yeni sayılıyordu.
+
+        Slug adın başında olduğu için alfabetik sıra zaman sırasını bozuyor —
+        `--no-llm` canlı denemede en yeni yerine en alfabetik analizi almıştı.
+        """
+        for name in (
+            "helix-en-remote-20260806-005545",
+            "novatek-tr-kurumsal-20260806-005456",
+            "fintech-tr-startup-20260806-005522",
+        ):
+            run_dir = tmp_path / name
+            run_dir.mkdir()
+            write_analysis(
+                run_dir,
+                JobAnalysis(
+                    posting=JobPosting(
+                        title=name, language="tr", seniority="mid", work_mode="remote"
+                    )
+                ),
+            )
+
+        latest = latest_analysis(tmp_path)
+
+        assert latest is not None
+        assert latest.parent.name == "helix-en-remote-20260806-005545"
+
+    def test_same_second_counter_breaks_the_tie(self, tmp_path: Path) -> None:
+        """Aynı saniyedeki ikinci çalıştırmanın adında sayaç var: `...-005545-2`."""
+        for name in ("acme-20260806-005545", "acme-20260806-005545-2"):
+            run_dir = tmp_path / name
+            run_dir.mkdir()
+            write_analysis(
+                run_dir,
+                JobAnalysis(
+                    posting=JobPosting(
+                        title=name, language="tr", seniority="mid", work_mode="remote"
+                    )
+                ),
+            )
+
+        latest = latest_analysis(tmp_path)
+
+        assert latest is not None
+        assert latest.parent.name == "acme-20260806-005545-2"
+
+    def test_undated_directory_is_treated_as_oldest(self, tmp_path: Path) -> None:
+        for name in ("elle-olusturulmus", "acme-20260101-000000"):
+            run_dir = tmp_path / name
+            run_dir.mkdir()
+            write_analysis(
+                run_dir,
+                JobAnalysis(
+                    posting=JobPosting(
+                        title=name, language="tr", seniority="mid", work_mode="remote"
+                    )
+                ),
+            )
+
+        latest = latest_analysis(tmp_path)
+
+        assert latest is not None
+        assert latest.parent.name == "acme-20260101-000000"
+
     def test_ignores_runs_without_analysis(self, tmp_path: Path) -> None:
         (tmp_path / "acme-20260806-130000").mkdir()  # sadece job_clean.txt var gibi
         run_dir = tmp_path / "acme-20260806-100000"
