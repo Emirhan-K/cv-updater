@@ -46,5 +46,8 @@ Bölüm öğeleri HTML-string bir `description` taşır; her öğenin bir `id`'s
 
 **MVP çizgisi: 01–10.** 11–12 yaşam kalitesi, 13 takip issue'su.
 
+**Durum (7 Ağustos 2026):** issue 01–09 kapandı, Faz 0–2 bitti. Araç uçtan uca çalışıyor.
+Kalan MVP maddesi: issue 10 (ATS öz-kontrolü).
+
 Her issue bir **📄 Dokümantasyon** bölümüyle biter: ilgili doküman kapanmadan önce yazılır ya da
 güncellenir (`docs/INDEX.md` her seferinde güncel tutulur).
