@@ -9,17 +9,27 @@ asla yeni içerik uydurmaz.
 > yeniden ifade edebilir; ama bir deneyimi, bir yeteneği, bir tarihi ya da bir metriği icat edemez.
 
 ```
-job.txt ──▶ [1] ilan analizi (LLM, yapılandırılmış çıktı)
-                     │
-master.json ─────────┼──▶ [2] deterministik ön filtre (etiket / anahtar kelime puanlama)
- (her deneyimin,     │
-  maddenin ve      └──▶ [3] LLM seçimi + yeniden ifade (dürüstlük guardrail'i)
-  yeteneğin süper seti)     │
-                             ├──▶ tailored.json  (Reactive Resume'a doğrudan import edilir)
-                             └──▶ match_report.md (neden bu maddeler, hangi kelimeler eksik)
-                                          │
-                       PDF ──▶ [4] ATS öz-kontrolü (metni geri çıkar, kelime + ligatür doğrula)
+ilan.txt ──▶ [1] ilan analizi ····························· LLM
+                  └── halüsinasyon süzgeci + etiket eşlemesi   deterministik
+                                    │
+master.json ────────▶ [2] ön filtre: etiket puanlama ········ deterministik
+ (her deneyimin,                    │                          (LLM'e giden metni yarıya indirir)
+  maddenin ve                       ▼
+  yeteneğin süper seti)  [3] seçim + yeniden ifade ·········· LLM
+                                    │
+                         [4] DÜRÜSTLÜK GUARDRAIL'İ ·········· deterministik
+                                    │                          ihlal varsa akış BURADA durur
+                    ┌───────────────┴───────────────┐
+                    ▼                               ▼
+             tailored.json                   match_report.md
+   (Reactive Resume'a import edilir)   (uyum skoru, gerekçe, eksik kelimeler)
+                    │
+                    ▼
+              [5] ATS öz-kontrolü ····························· deterministik  (issue 10)
 ```
+
+**Modelin söylediği hiçbir şey doğrulanmadan bir sonraki adıma geçmiyor.** İki LLM adımının
+ikisinin de ardından deterministik bir denetim var.
 
 ## Kurulum
 
@@ -37,18 +47,27 @@ LLM adımları için `.env.example`'ı `.env` olarak kopyala. İki seçenek var:
 
 ## Durum
 
-Faz 0 ve Faz 1 tamam (issue 01-05): süper set doğrulanıyor, ilan üç yoldan alınıp normalize
-ediliyor ve yapılandırılmış `job.json`'a çevriliyor. Sırada ön filtre (06) ve dürüstlük
-guardrail'i (07). Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
-[`docs/PIPELINE.md`](docs/PIPELINE.md).
+**Faz 0–2 tamam (issue 01–09): araç uçtan uca çalışıyor.** İlandan başlayıp Reactive
+Resume'a import edilebilen `tailored.json` ve `match_report.md`'ye kadar. 470 test yeşil,
+hiçbiri ağa çıkmıyor. Sırada ATS öz-kontrolü (issue 10).
+
+Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
+[`docs/PIPELINE.md`](docs/PIPELINE.md), guardrail'in nasıl çalıştığı
+[`docs/GUARDRAILS.md`](docs/GUARDRAILS.md).
 
 ## Komutlar
 
 | Komut | Ne yapar | LLM? |
 |---|---|---|
 | `cv-updater validate` | `master.json`'ı şemaya karşı doğrular + içerik lint'i çalıştırır | hayır |
-| `cv-updater tailor <ilan>` | `tailored.json` + `match_report.md` üretir | evet |
-| `cv-updater check <pdf>` | PDF'ten metni geri çıkarıp ATS uyumunu puanlar | hayır |
+| `cv-updater tailor <ilan>` | Tam boru hattı: `tailored.json` + `match_report.md` üretir | evet |
+| `cv-updater score <slug>` | Sadece ön filtreyi çalıştırır, puanlamayı tabloyla gösterir | hayır |
+| `cv-updater report <slug>` | Uyum raporunu yeniden üretir | hayır |
+| `cv-updater check <pdf>` | PDF'ten metni geri çıkarıp ATS uyumunu puanlar (issue 10) | hayır |
+
+Guardrail varsayılan olarak **katı**: bir ihlal bulunursa akış durur ve `tailored.json`
+üretilmez. `--repair` ihlalli metni kaynağına döndürüp sürdürür — bir gevşetme değil,
+uydurulan metnin atılması.
 
 `python -m cv_updater` de aynı arayüzü verir.
 
@@ -62,12 +81,18 @@ Get-Clipboard | uv run cv-updater tailor -  # panodan (PowerShell)
 uv run cv-updater tailor ilanlar/acme.txt   # dosyadan
 uv run cv-updater tailor --paste            # $EDITOR açılır
 
-uv run cv-updater check out/cv.pdf          # PDF'te anahtar kelimeler hayatta kaldı mı?
+uv run cv-updater score acme                # ön filtreyi gözle denetle (LLM'e gitmez)
+uv run cv-updater tailor ilan.txt --lang en # Türkçe ilana İngilizce CV
+uv run cv-updater tailor ilan.txt --repair  # guardrail ihlalinde durma, onararak devam et
 ```
 
 Her çalıştırma `out/<slug>-<zaman damgası>/` altına yazar; önceki çıktı asla ezilmez.
-Sonraki adımlar üzerinde çalışırken `--no-llm` en son analizi yeniden kullanır ve API'ye
-gitmez.
+Bir çalıştırma dizini şunları taşır: `job_raw.txt` · `job_clean.txt` · `job.json` ·
+`candidates.json` · `plan.json` · `violations.json` · **`tailored.json`** ·
+**`match_report.md`**.
+
+`--no-llm` iki LLM adımını da atlar (en son analizi ve planı yeniden kullanır) — sonraki
+adımlar üzerinde çalışırken kota harcamamak için.
 
 ## Geliştirme
 
