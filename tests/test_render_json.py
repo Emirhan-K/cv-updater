@@ -27,9 +27,12 @@ from cv_updater.models.resume import (
 )
 from cv_updater.models.tailor import SelectedBullet, TailoredExperience, TailorPlan
 from cv_updater.steps.render_json import (
+    DEFAULT_FONT,
+    LIGATURE_FREE_FONTS,
     TAILORED_FILENAME,
     bullet_list,
     has_ligatures,
+    nearest_weight,
     new_id,
     paragraph,
     read_tailored,
@@ -228,8 +231,9 @@ class TestCompilation:
 
     def test_experience_description_is_built_from_selected_bullets(self, rendered: Resume) -> None:
         item = rendered.sections.experience.items[0]
-        assert item.description.startswith("<ul><li>Görüntü işleme")
-        assert "Dokümantasyonu" not in item.description
+        markup = item.roles[0].description if item.roles else item.description
+        assert markup.startswith("<ul><li>Görüntü işleme")
+        assert "Dokümantasyonu" not in markup
 
     def test_experiences_follow_the_plan_order(self, rendered: Resume) -> None:
         assert rendered.sections.experience.items[0].company == "Örnek AI"
@@ -256,6 +260,55 @@ class TestCompilation:
     def test_profile_label_becomes_the_full_url(self, rendered: Resume) -> None:
         """Çoğu ATS gömülü linki okumaz; okuduğu şey görünen metin."""
         assert rendered.sections.profiles.items[0].website.label == "github.com/ada-ornek"
+
+
+class TestRoles:
+    """Regresyon: ilk üretilen PDF'te Preunec maddesiz çıktı.
+
+    Reactive Resume bir deneyimde `roles[]` doluysa öğenin kendi
+    `description`'ını render etmiyor — rollerin kendi açıklamasına bakıyor.
+    """
+
+    def test_bullets_go_to_the_role_when_roles_exist(self, rendered: Resume) -> None:
+        item = rendered.sections.experience.items[0]
+        assert item.roles
+        assert item.roles[0].description.startswith("<ul><li>")
+
+    def test_the_item_description_is_cleared_to_avoid_double_rendering(
+        self, rendered: Resume
+    ) -> None:
+        assert rendered.sections.experience.items[0].description == ""
+
+    def test_bullets_stay_on_the_item_when_there_are_no_roles(self, rendered: Resume) -> None:
+        """Rolsüz deneyimlerin davranışı değişmemeli."""
+        old = next(i for i in rendered.sections.experience.items if i.company == "Eski Yazılım")
+        assert old.roles == []
+
+    def test_the_most_recent_role_wins(
+        self, resume: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Roller ters sırada verilse de maddeler güncel role gitmeli."""
+        item = resume.sections.experience.items[0]
+        item.roles = [
+            Role(id="role-eski", position="Junior", period="Ocak 2025 – Mayıs 2026"),
+            Role(id="role-yeni", position="Kıdemli", period="Mayıs 2026 – Devam Ediyor"),
+        ]
+
+        doc = render(resume, plan, pool, run_id=RUN)
+
+        roles = doc.sections.experience.items[0].roles
+        senior = next(role for role in roles if role.position == "Kıdemli")
+        junior = next(role for role in roles if role.position == "Junior")
+        assert senior.description.startswith("<ul><li>")
+        assert junior.description == ""
+
+    def test_role_titles_and_periods_are_untouched(self, resume: Resume, rendered: Resume) -> None:
+        original = resume.sections.experience.items[0].roles[0]
+        rendered_role = rendered.sections.experience.items[0].roles[0]
+        assert (rendered_role.position, rendered_role.period) == (
+            original.position,
+            original.period,
+        )
 
 
 class TestIds:
@@ -311,6 +364,55 @@ class TestOutput:
     def test_the_stylesheet_disables_ligatures(self, rendered: Resume) -> None:
         stylesheet = json.loads(to_json(rendered))["metadata"]["stylesheet"]
         assert stylesheet["mode"] == "legacy"
+        assert "font-variant-ligatures: none" in stylesheet["source"]["text"]
+
+
+class TestTypography:
+    """Regresyon: ilk PDF'te ligatürler duruyordu.
+
+    `metadata.stylesheet` ile `font-variant-ligatures: none` koymak yetmiyor —
+    Reactive Resume PDF'i `@react-pdf/renderer` ile üretiyor ve o bu CSS
+    özelliğini tanımıyor. Tek gerçek koruma ligatürsüz font.
+    """
+
+    def test_the_default_font_replaces_the_master_font(self, rendered: Resume) -> None:
+        assert rendered.metadata.typography.body.fontFamily == DEFAULT_FONT
+        assert rendered.metadata.typography.heading.fontFamily == DEFAULT_FONT
+
+    def test_the_default_font_is_measured_ligature_free(self) -> None:
+        assert DEFAULT_FONT in LIGATURE_FREE_FONTS
+
+    def test_weights_are_clamped_to_what_the_font_carries(
+        self, resume: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Tinos yalnızca 400/700 taşıyor; 500 ve 600 istenirse font bulunamaz."""
+        resume.metadata.typography.body.fontWeights = ["400", "500"]
+        resume.metadata.typography.heading.fontWeights = ["600"]
+
+        doc = render(resume, plan, pool, run_id=RUN)
+
+        assert doc.metadata.typography.body.fontWeights == ["400"]
+        assert doc.metadata.typography.heading.fontWeights == ["700"]
+
+    def test_a_font_can_be_forced(
+        self, resume: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(resume, plan, pool, run_id=RUN, font="Inter")
+
+        assert doc.metadata.typography.body.fontFamily == "Inter"
+        # Inter her ağırlığı taşıyor; eşleme yapılmamalı.
+        assert (
+            doc.metadata.typography.body.fontWeights == resume.metadata.typography.body.fontWeights
+        )
+
+    def test_nearest_weight_prefers_the_bolder_side_on_a_tie(self) -> None:
+        assert nearest_weight("550", ("400", "700")) == "700"
+        assert nearest_weight("500", ("400", "700")) == "400"
+        assert nearest_weight("400", ("400", "700")) == "400"
+
+    def test_the_stylesheet_is_still_written_for_the_web_preview(self, rendered: Resume) -> None:
+        """PDF'i kurtarmıyor ama web önizlemesinde işe yarıyor; zararsız."""
+        stylesheet = json.loads(to_json(rendered))["metadata"]["stylesheet"]
         assert "font-variant-ligatures: none" in stylesheet["source"]["text"]
 
 

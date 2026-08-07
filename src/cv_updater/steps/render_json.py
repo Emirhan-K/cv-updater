@@ -23,26 +23,58 @@ import html
 import json
 import re
 import uuid
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from cv_updater.lint import LIGATURES, fix_ligatures
 from cv_updater.models.candidates import CandidatePool
 from cv_updater.models.job import Language
-from cv_updater.models.resume import Item, Resume, Sections
+from cv_updater.models.resume import ExperienceItem, Item, Resume, Role, Sections
 from cv_updater.models.tailor import TailorPlan
+from cv_updater.steps.score import parse_period_end
 
 TAILORED_FILENAME = "tailored.json"
 
 #: `metadata.page.locale` — ATS ve PDF tarafı dili buradan okuyor.
 LOCALES: dict[str, str] = {"tr": "tr-TR", "en": "en-US"}
 
-#: Ligatürleri render seviyesinde kapatan stil. TODO.md §1'in kritik bulgusu:
-#: "fine-tuning" PDF'te "ﬁne-tuning" olarak gömülüyor ve ATS aramayı kaçırıyor.
-#: Karakter seviyesindeki temizlik ayrıca yapılıyor (`fix_ligatures`); bu kural
-#: fontun kendi ligatürünü üretmesini engelliyor.
+# --- Ligatür savunması ----------------------------------------------------- #
+# TODO.md §1'in kritik bulgusu: "fine-tuning" PDF'in metin katmanına tek bir
+# ligatür glifi olarak gömülüyor, çıkarıldığında "fne-tuning" oluyor ve ATS
+# aramayı kaçırıyor.
+#
+# Üç katman denendi, **yalnızca üçüncüsü işe yarıyor**:
+#
+# 1. Karakter temizliği (`fix_ligatures`) — kaynak metindeki ﬁ/ﬂ karakterlerini
+#    açıyor. Gerekli ama yetersiz: sorun kaynakta değil, render'da.
+# 2. `metadata.stylesheet` içinde `font-variant-ligatures: none` — **çalışmıyor.**
+#    Reactive Resume PDF'i `@react-pdf/renderer` ile üretiyor, o da bu CSS
+#    özelliğini tanımıyor. İlk gerçek PDF'te ligatürler aynen duruyordu.
+#    Stil yine yazılıyor (web önizlemesinde işe yarar) ama PDF'i o kurtarmıyor.
+# 3. **Ligatürü olmayan bir font.** Tek gerçek çözüm bu.
+#
+#: Fontların GSUB tabloları ölçüldü (2026-08-07): `Tinos` ve `Inter` ne `liga`
+#: özelliği ne de ligatür glifi taşıyor, `Arimo`'da özellik yok. Üçü de Türkçe
+#: karakterlerin tamamını kapsıyor. Varsayılan Tinos: Times New Roman metrik
+#: eşi, en klasik ATS-güvenli font, ve süper setin serif tercihini koruyor.
+DEFAULT_FONT = "Tinos"
+
+#: Ligatür üretemediği ölçülmüş fontlar. Başka bir font seçilirse uyarı basılır.
+LIGATURE_FREE_FONTS: frozenset[str] = frozenset({"Tinos", "Inter", "Arimo", "Cousine"})
+
+#: Font başına gerçekten var olan ağırlıklar. Tinos yalnızca 400/700 taşıyor;
+#: süper set 500 (gövde) ve 600 (başlık) istiyor, o yüzden eşleme gerekiyor —
+#: yoksa Reactive Resume bilinmeyen ağırlıkta fontu bulamayıp geri düşüyor.
+FONT_WEIGHTS: dict[str, tuple[str, ...]] = {
+    "Tinos": ("400", "700"),
+    "Cousine": ("400", "700"),
+}
+
 LIGATURE_CSS = """\
-/* cv-updater: ATS'in "fine-tuning" araması "ﬁne-tuning"e takılmasın. */
+/* cv-updater: ATS'in "fine-tuning" araması "ﬁne-tuning"e takılmasın.
+   Not: @react-pdf/renderer bu kuralı yok sayıyor — PDF'teki asıl koruma
+   ligatürsüz font seçimi. Bu stil yalnızca web önizlemesi için. */
 * {
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "clig" 0, "dlig" 0, "hlig" 0;
@@ -96,10 +128,13 @@ def render(
     *,
     language: Language | None = None,
     run_id: str = "",
+    font: str = DEFAULT_FONT,
 ) -> Resume:
     """`master.json` + plan → import edilebilir `Resume`.
 
     Girdi `resume` değiştirilmez; derin kopya üzerinde çalışılır.
+    `font` süper setin tipografisini ezer — varsayılanı ligatürsüz olduğu
+    **ölçülmüş** bir font (bkz. `DEFAULT_FONT`).
     """
     doc = resume.model_copy(deep=True)
     target = language or pool.language
@@ -113,9 +148,42 @@ def render(
     _render_skills(doc, plan, stamp)
     _render_profiles(doc, stamp)
     _renumber_remaining(doc, stamp)
-    _render_metadata(doc, target)
+    _render_metadata(doc, target, font)
 
     return doc
+
+
+def _attach_bullets(item: ExperienceItem, texts: list[str]) -> None:
+    """Maddeleri deneyimin doğru yerine yazar.
+
+    **Roller varsa maddeler öğe seviyesine yazılamaz.** Reactive Resume bir
+    deneyimde `roles[]` doluysa öğenin kendi `description`'ını render etmiyor;
+    her rolün kendi `description`'ına bakıyor (şema: "bu spesifik rolün
+    açıklaması"). İlk üretilen CV'de Preunec — tek rol taşıyan deneyim —
+    PDF'te maddesiz çıktı: `tailored.json`'da 4 madde duruyordu ama sayfada
+    yalnızca unvan satırları görünüyordu.
+
+    Maddeler **en güncel role** yazılıyor. Terfi çizgisi CV'de değerli bir
+    sinyal, onu düzleştirmek yerine korunuyor; hangi maddenin hangi role ait
+    olduğu bilgisi süper sette olmadığı için hepsi güncel rolün altında
+    toplanıyor.
+    """
+    markup = bullet_list(texts)
+    if not item.roles:
+        item.description = markup
+        return
+
+    latest = max(item.roles, key=_role_sort_key)
+    latest.description = markup
+    # Öğe seviyesi bilerek boşaltılıyor: Reactive Resume bir gün ikisini birden
+    # render ederse maddeler iki kez görünürdü.
+    item.description = ""
+
+
+def _role_sort_key(role: Role) -> tuple[int, date]:
+    """Rolleri bitiş tarihine göre sıralar; ayrıştırılamayan dönem en eskiye düşer."""
+    end = parse_period_end(role.period)
+    return (1, end) if end is not None else (0, date.min)
 
 
 def _render_experiences(doc: Resume, plan: TailorPlan, stamp: str) -> None:
@@ -127,7 +195,7 @@ def _render_experiences(doc: Resume, plan: TailorPlan, stamp: str) -> None:
         item = next((i for i in doc.sections.experience.items if i.id == entry.source_id), None)
         if item is None:
             continue
-        item.description = bullet_list([bullet.rewritten for bullet in entry.bullets])
+        _attach_bullets(item, [bullet.rewritten for bullet in entry.bullets])
         item.hidden = False
         ordered.append(item)
 
@@ -229,9 +297,31 @@ def _renumber_remaining(doc: Resume, stamp: str) -> None:
         field.id = new_id(stamp, field.id)
 
 
-def _render_metadata(doc: Resume, language: Language) -> None:
-    """Dil ve ligatür ayarları."""
+def nearest_weight(weight: str, available: tuple[str, ...]) -> str:
+    """İstenen ağırlığa en yakın **gerçekten var olan** ağırlık.
+
+    Eşitlikte kalın olan seçilir: 500 ile 400/700 arasında kalırsa 400'e iner
+    (gövde metni), ama 600 için 700 gelir (başlık) — okunabilirlik yönünde.
+    """
+    target = int(weight)
+    return min(available, key=lambda value: (abs(int(value) - target), -int(value)))
+
+
+def _render_typography(doc: Resume, font: str) -> None:
+    """Fontu ligatürsüz olanla değiştirir ve ağırlıkları fontun taşıdıklarına indirger."""
+    available = FONT_WEIGHTS.get(font)
+    for block in (doc.metadata.typography.body, doc.metadata.typography.heading):
+        block.fontFamily = font
+        if available:
+            block.fontWeights = list(
+                dict.fromkeys(nearest_weight(weight, available) for weight in block.fontWeights)
+            ) or [available[0]]
+
+
+def _render_metadata(doc: Resume, language: Language, font: str) -> None:
+    """Dil, tipografi ve ligatür ayarları."""
     doc.metadata.page.locale = LOCALES.get(language, LOCALES["tr"])
+    _render_typography(doc, font)
     doc.metadata.stylesheet = {  # type: ignore[attr-defined]
         "mode": "legacy",
         "source": {"languageVersion": _STYLESHEET_LANGUAGE_VERSION, "text": LIGATURE_CSS},

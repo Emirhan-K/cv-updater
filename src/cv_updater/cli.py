@@ -44,7 +44,13 @@ from cv_updater.steps.intake import (
     write_run_files,
 )
 from cv_updater.steps.normalize import MIN_MEANINGFUL_CHARS, normalize
-from cv_updater.steps.render_json import has_ligatures, render, write_tailored
+from cv_updater.steps.render_json import (
+    DEFAULT_FONT,
+    LIGATURE_FREE_FONTS,
+    has_ligatures,
+    render,
+    write_tailored,
+)
 from cv_updater.steps.report import STRONG_FIT, WEAK_FIT, fit_score
 from cv_updater.steps.report import build as build_report
 from cv_updater.steps.report import write_report as write_match_report
@@ -276,6 +282,13 @@ def tailor(
             help="Guardrail ihlalinde durma: ihlalli maddeyi kaynak metnine döndür ve devam et.",
         ),
     ] = False,
+    font: Annotated[
+        str,
+        typer.Option(
+            "--font",
+            help=f"CV fontu. Varsayılan {DEFAULT_FONT} — ligatürsüz olduğu ölçülmüş.",
+        ),
+    ] = DEFAULT_FONT,
 ) -> None:
     """İlana göre tailored.json + match_report.md üret (LLM adımı).
 
@@ -333,7 +346,7 @@ def tailor(
         return
     result, verification = outcome
 
-    _render_step(run_dir, resume, result.plan, pool, lang=_parse_lang(lang))
+    _render_step(run_dir, resume, result.plan, pool, lang=_parse_lang(lang), font=font)
     _report_step(run_dir, analysis, pool, result.plan, verification)
 
 
@@ -374,9 +387,21 @@ def _render_step(
     pool: CandidatePool,
     *,
     lang: Language | None,
+    font: str = DEFAULT_FONT,
 ) -> Path:
     """Planı `tailored.json`'a derler ve canlı şemaya karşı doğrular."""
-    doc = render(resume, plan, pool, language=lang, run_id=run_dir.name)
+    if font not in LIGATURE_FREE_FONTS:
+        # Ligatürler PDF'in metin katmanında oluşuyor ve ATS aramasını bozuyor;
+        # CSS ile kapatılamıyor (react-pdf tanımıyor), tek koruma fontun kendisi.
+        console.print(
+            f"[yellow]⚠ {escape(font)} ligatürsüz olduğu ölçülmüş fontlar arasında değil.[/yellow]"
+        )
+        console.print(
+            f"[dim]Ölçülenler: {', '.join(sorted(LIGATURE_FREE_FONTS))}. "
+            "PDF'te 'fine-tuning' → 'fne-tuning' olabilir.[/dim]"
+        )
+
+    doc = render(resume, plan, pool, language=lang, run_id=run_dir.name, font=font)
     path = write_tailored(run_dir, doc)
     payload = path.read_text(encoding="utf-8")
 

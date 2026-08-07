@@ -213,13 +213,36 @@ Kural listesi ve tasarım gerekçesi: [`GUARDRAILS.md`](GUARDRAILS.md).
 
 - `basics`, eğitim, diller, şirket adı, unvan, tarih, roller **doğrudan `master.json`'dan**
 - `summary.content` = `<p>…</p>`, deneyim `description` = `<ul><li>…</li></ul>`
+- **deneyimde `roles[]` varsa maddeler öğeye değil en güncel role yazılır** — Reactive
+  Resume roller doluysa öğe seviyesindeki `description`'ı render etmiyor
 - proje maddeleri ön filtrenin seçtiği haliyle, **yeniden ifade edilmeden**
 - seçilmeyen öğe silinmez, `hidden: true` olur
 - `metadata.page.locale` dile göre (`tr-TR` / `en-US`)
-- `metadata.stylesheet` ligatürleri render seviyesinde kapatır; karakter seviyesi ayrıca
-  temizlenir
+- **tipografi ligatürsüz bir fontla değiştirilir** (varsayılan `Tinos`) ve ağırlıklar o
+  fontun taşıdıklarına indirgenir — ligatür savunmasının tek gerçek katmanı bu, ayrıntı
+  aşağıda
 - `x_meta` / `x_bullets` çıktıdan tamamen silinir — süper set paylaşılan dosyaya sızmaz
 - her öğeye çalıştırmaya özgü yeni `id` (UUID5) verilir, import'ta çakışma olmasın
+
+### Ligatür savunması — üç katman, biri işe yarıyor
+
+TODO.md §1'in kritik bulgusu: "fine-tuning" PDF'in metin katmanına tek bir ligatür glifi
+olarak gömülüyor, çıkarıldığında `fne-tuning` oluyor, ATS aramayı kaçırıyor.
+
+| Katman | Durum |
+|---|---|
+| Kaynak metindeki `ﬁ`/`ﬂ` karakterlerini açmak (`fix_ligatures`) | gerekli ama yetersiz — sorun kaynakta değil render'da |
+| `metadata.stylesheet` → `font-variant-ligatures: none` | **çalışmıyor.** RR PDF'i `@react-pdf/renderer` ile üretiyor, o bu CSS'i tanımıyor. İlk gerçek PDF'te ligatürler aynen duruyordu. Stil yine yazılıyor (web önizlemesi için). |
+| **Ligatürü olmayan font** | **tek gerçek çözüm.** |
+
+Aday fontların GSUB tabloları ölçüldü (2026-08-07, `fontTools` ile): `Tinos` ve `Inter` ne
+`liga` özelliği ne de ligatür glifi taşıyor, `Arimo`'da özellik yok; üçü de Türkçe
+karakterlerin tamamını kapsıyor. Varsayılan **Tinos** — Times New Roman metrik eşi, en
+klasik ATS-güvenli font, ve süper setin serif tercihini koruyor. `--font` ile değiştirilir;
+ölçülmemiş bir font verilirse uyarı basılır.
+
+Tinos yalnızca 400/700 ağırlığı taşıdığı için süper setin 500/600'ü en yakın gerçek
+ağırlığa indiriliyor (`nearest_weight`) — yoksa Reactive Resume fontu bulamayıp geri düşer.
 
 Çıktı, depodaki rxresu.me şema anlık görüntüsüne karşı doğrulanır; hata varsa çıkış kodu 1.
 Anlık görüntü `cv-updater validate --refresh-schema` ile yenilenir (**ağa çıkan tek yardımcı
