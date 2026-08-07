@@ -10,6 +10,7 @@
 | [`PIPELINE.md`](PIPELINE.md) | Adım adım veri akışı; hangi adım deterministik, hangisi LLM; `job.json` şeması | 05 |
 | [`SCORING.md`](SCORING.md) | Ön filtre formülü, ağırlıkların gerekçesi, geri çağırma ağı, `candidates.json` | 06 |
 | [`GUARDRAILS.md`](GUARDRAILS.md) | Dürüstlük guardrail'i: kural listesi, `--strict` / `--repair`, tasarım gerekçesi | 07 |
+| [`REPORT.md`](REPORT.md) | Uyum raporu bölüm bölüm; uyum skoru eşikleri, "ne zaman başvurma" | 09 |
 
 `MASTER_DATA.md` gitignore'dadır: süper setin durumunu (terfi tarihi, ekip büyüklüğü, tarih
 aralıkları) taşıdığı için `data/master.json` ile aynı gizlilik sınıfındadır. `CLAUDE.md` gibi
@@ -18,7 +19,7 @@ yalnızca yerelde yaşar.
 ## Mimari, kuşbakışı
 
 ```
-cli.py                 typer uygulaması: validate · tailor · score · check
+cli.py                 typer uygulaması: validate · tailor · score · report · check
 llm.py                 Anthropic istemcisi — model, endpoint ve yapılandırılmış
                        çıktı stratejisinin yaşadığı tek yer
 paths.py               data/ ve out/ konumları
@@ -35,6 +36,7 @@ steps/score.py         deterministik ön filtre + geri çağırma ağı (LLM yok
 steps/tailor.py        LLM uyarlama adımı — havuzdan seçim + yeniden ifade
 steps/verify.py        dürüstlük guardrail'i: planı master.json'a karşı denetler
 steps/render_json.py   tailored.json derlemesi + rxresu.me şema doğrulaması
+steps/report.py        match_report.md — uyum skoru, gerekçeler, eksikler
 schema/                rxresu.me şema anlık görüntüsü (--refresh-schema ile yenilenir)
 data/                  master.json (gitignore) · master.example.json · tags.yaml
 out/                   çalıştırma başına bir dizin (gitignore)

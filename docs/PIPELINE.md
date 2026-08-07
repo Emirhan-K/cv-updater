@@ -225,12 +225,28 @@ Kural listesi ve tasarım gerekçesi: [`GUARDRAILS.md`](GUARDRAILS.md).
 Anlık görüntü `cv-updater validate --refresh-schema` ile yenilenir (**ağa çıkan tek yardımcı
 komut**) ve değişiklik commit'lenmelidir.
 
-## 8-9. Henüz uygulanmadı
+## 8. Uyum raporu — `steps/report.py`
+
+| | |
+|---|---|
+| **Girdi** | `job.json` + `candidates.json` + `plan.json` + `violations.json` |
+| **Çıktı** | Markdown |
+| **Dosya** | `match_report.md` |
+| **Ağ** | yok |
+
+Uyum skoru **deterministik**: gereksinim kapsamasından hesaplanıyor, LLM'e sorulmuyor.
+Modelden gelen tek şey madde gerekçeleri ve elenme sebepleri — ikisi de guardrail'den geçmiş.
+
+`cv-updater report <slug>` raporu tek başına yeniden üretir.
+
+Bölümler ve eşikler: [`REPORT.md`](REPORT.md), skor formülü: [`SCORING.md`](SCORING.md).
+
+## 9. Henüz uygulanmadı
 
 | Adım | Issue | Girdi | Çıktı |
 |---|---|---|---|
-| `match_report.md` | 09 | plan + havuz + `job.json` | uyum skoru, gerekçe, eksik anahtar kelimeler |
 | ATS öz-kontrolü | 10 | üretilen PDF | metin geri okuma + puanlama |
+| Render v2 (RenderCV) | 11 | `tailored.json` | YAML → Typst → PDF |
 
 ## `job.json` şeması
 

@@ -21,6 +21,7 @@ from cv_updater.models.tailor import (
 from cv_updater.steps.analyze_job import JOB_FILENAME
 from cv_updater.steps.intake import CLEAN_FILENAME, RAW_FILENAME
 from cv_updater.steps.render_json import TAILORED_FILENAME, has_ligatures
+from cv_updater.steps.report import REPORT_FILENAME
 from cv_updater.steps.tailor import PLAN_FILENAME, read_plan
 from cv_updater.steps.verify import VIOLATIONS_FILENAME, read_report
 
@@ -54,6 +55,8 @@ def _out_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setattr("cv_updater.steps.intake.OUT_DIR", target)
     # `--no-llm` önceki çalıştırmayı burada arıyor.
     monkeypatch.setattr("cv_updater.steps.analyze_job.OUT_DIR", target)
+    # `score` / `report` slug'dan çalıştırma dizinini burada arıyor.
+    monkeypatch.setattr("cv_updater.paths.OUT_DIR", target)
     return target
 
 
@@ -538,3 +541,77 @@ class TestTailoredJson:
 
         assert result.exit_code == 1
         assert not (_only_run_dir(_out_dir) / TAILORED_FILENAME).exists()
+
+
+class TestMatchReport:
+    """Issue 09 — "bu ilana uyuyor muyum?" sorusunun cevabı."""
+
+    def test_the_report_is_written(self, tmp_path: Path, _out_dir: Path) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        result = runner.invoke(app, ["tailor", str(posting)])
+
+        assert result.exit_code == 0, result.output
+        assert (_only_run_dir(_out_dir) / REPORT_FILENAME).exists()
+
+    def test_the_headline_reaches_the_terminal(self, tmp_path: Path, _out_dir: Path) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        result = runner.invoke(app, ["tailor", str(posting)])
+
+        assert "Uyum: %" in result.output
+
+    def test_the_report_names_the_guardrail_result(self, tmp_path: Path, _out_dir: Path) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        runner.invoke(app, ["tailor", str(posting)])
+
+        markdown = (_only_run_dir(_out_dir) / REPORT_FILENAME).read_text(encoding="utf-8")
+        assert "## Guardrail" in markdown
+
+    def test_report_command_regenerates_it(self, tmp_path: Path, _out_dir: Path) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+        runner.invoke(app, ["tailor", str(posting)])
+        run_dir = _only_run_dir(_out_dir)
+        first = (run_dir / REPORT_FILENAME).read_text(encoding="utf-8")
+        (run_dir / REPORT_FILENAME).unlink()
+
+        result = runner.invoke(app, ["report", run_dir.name])
+
+        assert result.exit_code == 0, result.output
+        assert (run_dir / REPORT_FILENAME).read_text(encoding="utf-8") == first
+
+    def test_report_command_needs_no_api_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _out_dir: Path
+    ) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+        runner.invoke(app, ["tailor", str(posting)])
+
+        monkeypatch.setattr("cv_updater.cli.has_api_key", lambda: False)
+        result = runner.invoke(app, ["report", _only_run_dir(_out_dir).name])
+
+        assert result.exit_code == 0, result.output
+
+    def test_report_command_without_a_plan_fails_clearly(
+        self, tmp_path: Path, _out_dir: Path
+    ) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+        runner.invoke(app, ["tailor", str(posting)])
+        run_dir = _only_run_dir(_out_dir)
+        (run_dir / PLAN_FILENAME).unlink()
+
+        result = runner.invoke(app, ["report", run_dir.name])
+
+        assert result.exit_code == 2
+        assert PLAN_FILENAME in result.output
+
+    def test_report_command_rejects_an_unknown_slug(self, _out_dir: Path) -> None:
+        _out_dir.mkdir(parents=True, exist_ok=True)
+        result = runner.invoke(app, ["report", "bulunmayan"])
+        assert result.exit_code == 2

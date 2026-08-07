@@ -129,6 +129,33 @@ Her gereksinim için `candidates.json` bir satır taşır (`coverage[]`):
 raporundaki "eksik anahtar kelimeler" listesi buradan çıkıyor. Bir etiket burada görünüyorsa
 soru şu: gerçekten bilmiyor musun, yoksa `master.json`'a eklemeyi mi unuttun?
 
+## Uyum skoru
+
+> Issue 09. Kod: `src/cv_updater/steps/report.py`. **Bu skor bir LLM'e sorulmuyor** —
+> yukarıdaki kapsama tablosundan hesaplanıyor, dolayısıyla aynı çalıştırma her zaman aynı
+> yüzdeyi veriyor.
+
+```
+uyum % = Σ(ağırlık × kredi) / Σ(ağırlık) × 100
+
+ağırlık:  zorunlu gereksinim 3.0  ·  tercih edilen 1.0
+kredi:    ✅ kapsanıyor 1.0  ·  ⚠️ dolaylı 0.5  ·  ❌ eksik 0.0
+```
+
+Ağırlık oranı puanlamadaki `must`/`nice` oranının aynısı (3:1) — aynı ilanın iki farklı
+yerde farklı önemde sayılması tutarsızlık olurdu. Dolaylı kapsama yarım puan alıyor: CV'de
+karşılığı olan ama madde düzeyinde öne çıkmayan bir yetkinlik ne tam sayılmalı ne de yok.
+
+| Eşik | Karar | Ne demek |
+|---|---|---|
+| ≥ %70 | **başvur** | Zorunlu gereksinimlerin çoğu doğrudan kapsanıyor |
+| %45 – %69 | **başvurulabilir, hazırlan** | Boşluklar var; raporun "mülakat hazırlığı" bölümünü oku |
+| < %45 | **zorlama** | Süper setteki malzeme ilanı karşılamıyor; zaman başka bir ilana harcanır |
+
+Eşikler `report.py`'deki `WEAK_FIT` / `STRONG_FIT` sabitlerinde. %45'in altında rapor
+başına ⛔ işaretli bir uyarı basıyor: bu araç "her ilana CV uydur" aracı değil, hangi ilana
+**değmeyeceğini** de söylemesi gerekiyor.
+
 ## Ne kadar kısıldı
 
 `budget` bloğu süper setin ve havuzun karakter/öğe sayılarını tutar; `saved_ratio` ikisi

@@ -45,10 +45,25 @@ from cv_updater.steps.intake import (
 )
 from cv_updater.steps.normalize import MIN_MEANINGFUL_CHARS, normalize
 from cv_updater.steps.render_json import has_ligatures, render, write_tailored
-from cv_updater.steps.score import build_pool, find_run, write_pool
-from cv_updater.steps.tailor import latest_plan, plan_summary, read_plan, write_plan
+from cv_updater.steps.report import STRONG_FIT, WEAK_FIT, fit_score
+from cv_updater.steps.report import build as build_report
+from cv_updater.steps.report import write_report as write_match_report
+from cv_updater.steps.score import CANDIDATES_FILENAME, build_pool, find_run, read_pool, write_pool
+from cv_updater.steps.tailor import (
+    PLAN_FILENAME,
+    latest_plan,
+    plan_summary,
+    read_plan,
+    write_plan,
+)
 from cv_updater.steps.tailor import tailor as tailor_step
-from cv_updater.steps.verify import VerificationReport, verify, write_report
+from cv_updater.steps.verify import (
+    VIOLATIONS_FILENAME,
+    VerificationReport,
+    read_report,
+    verify,
+    write_report,
+)
 
 app = typer.Typer(
     name="cv-updater",
@@ -313,13 +328,43 @@ def tailor(
     pool = _score_step(run_dir, resume, analysis, result.text, lang=_parse_lang(lang))
     _print_pool(pool)
 
-    plan = _tailor_step(run_dir, resume, analysis, pool, repair=repair, no_llm=no_llm)
-    if plan is None:
+    outcome = _tailor_step(run_dir, resume, analysis, pool, repair=repair, no_llm=no_llm)
+    if outcome is None:
         return
+    result, verification = outcome
 
-    _render_step(run_dir, resume, plan.plan, pool, lang=_parse_lang(lang))
+    _render_step(run_dir, resume, result.plan, pool, lang=_parse_lang(lang))
+    _report_step(run_dir, analysis, pool, result.plan, verification)
 
-    console.print("\n[yellow]Uyum raporu henüz üretilmiyor (issue 09).[/yellow]")
+
+def _report_step(
+    run_dir: Path,
+    analysis: JobAnalysis,
+    pool: CandidatePool,
+    plan: TailorPlan,
+    verification: VerificationReport | None,
+) -> Path:
+    """Uyum raporunu üretir ve başlığı terminale basar."""
+    markdown = build_report(analysis, pool, plan, verification)
+    path = write_match_report(run_dir, markdown)
+    console.print(f"[green]✓[/green] {escape(str(path))}")
+
+    score = fit_score(pool.coverage)
+    style = "bold green" if score.percent >= STRONG_FIT else "yellow"
+    if score.weak:
+        style = "bold red"
+    console.print(
+        f"[{style}]Uyum: %{score.percent}[/{style}] · "
+        f"zorunlu {score.must_covered}/{score.must_total} · "
+        f"tercih {score.nice_covered}/{score.nice_total} · "
+        f"[bold]{escape(score.verdict)}[/bold]"
+    )
+    if score.weak:
+        console.print(
+            f"[dim]Uyum %{WEAK_FIT}'in altında — bu ilana CV uyarlamayı zorlama. "
+            "Gerekçe raporda.[/dim]"
+        )
+    return path
 
 
 def _render_step(
@@ -367,7 +412,7 @@ def _tailor_step(
     *,
     repair: bool,
     no_llm: bool = False,
-) -> TailorResult | None:
+) -> tuple[TailorResult, VerificationReport] | None:
     """Uyarlama + guardrail. İhlal varsa `--repair` yoksa burada durur."""
     result = _plan_source(analysis, pool, no_llm=no_llm)
     if result is None:
@@ -391,7 +436,7 @@ def _tailor_step(
         )
         raise typer.Exit(code=1)
 
-    return result
+    return result, report
 
 
 def _plan_source(
@@ -653,6 +698,45 @@ def _print_pool(pool: CandidatePool, *, verbose: bool = False) -> None:
             f"[yellow]süper sette yok:[/yellow] {escape(', '.join(pool.missing_tags))} "
             "[dim](gerçekten biliyorsan master.json'a ekle)[/dim]"
         )
+
+
+@app.command()
+def report(
+    slug: Annotated[
+        str,
+        typer.Argument(help="Çalıştırma dizini: out/ altındaki ad ya da ayırt edici bir parçası."),
+    ],
+) -> None:
+    """Var olan bir çalıştırma için uyum raporunu yeniden üret.
+
+    LLM'e gitmez: `job.json` + `candidates.json` + `plan.json` yeter. Rapor
+    metnini elle düzenledikten sonra geri almak ya da `master.json`'ı
+    güncelledikten sonra skoru tazelemek için.
+    """
+    run_dir = find_run(slug)
+    if run_dir is None:
+        console.print(f"[bold red]✗[/bold red] Çalıştırma bulunamadı: {escape(slug)}")
+        raise typer.Exit(code=2)
+
+    missing = [
+        name
+        for name in (JOB_FILENAME, CANDIDATES_FILENAME, PLAN_FILENAME)
+        if not (run_dir / name).exists()
+    ]
+    if missing:
+        console.print(f"[bold red]✗[/bold red] Eksik dosya: {', '.join(missing)}")
+        console.print("[dim]Önce `tailor` çalıştır.[/dim]")
+        raise typer.Exit(code=2)
+
+    console.print(f"[dim]çalıştırma:[/dim] {escape(run_dir.name)}")
+    analysis = read_analysis(run_dir / JOB_FILENAME)
+    pool = read_pool(run_dir / CANDIDATES_FILENAME)
+    plan = read_plan(run_dir / PLAN_FILENAME).plan
+
+    violations_path = run_dir / VIOLATIONS_FILENAME
+    verification = read_report(violations_path) if violations_path.exists() else None
+
+    _report_step(run_dir, analysis, pool, plan, verification)
 
 
 @app.command()
