@@ -49,6 +49,7 @@ Dosyanın yokluğu "denetlenmedi" demek olurdu.
 |---|---|---|
 | `source.unknown` | hata | `source_id` süper sette yok — madde tamamen uydurulmuş |
 | `source.not_offered` | hata | id süper sette var ama aday havuzunda yoktu; model kendi eklemiş |
+| `source.suffix_dropped` | uyarı | Dil soneki (`.tr`/`.en`) düşürülmüş; **tek aday varsa** çözüldü |
 | `source.duplicate` | uyarı | Aynı madde iki kez seçilmiş |
 | `number.invented` | hata | `rewritten` içinde kaynakta olmayan bir sayı var |
 | `entity.invented` | hata | Kaynakta olmayan teknoloji/ürün adı (`FastAPI`, `S3`, `CI/CD` biçimli) |
@@ -57,8 +58,18 @@ Dosyanın yokluğu "denetlenmedi" demek olurdu.
 | `summary.ungrounded` | hata | Özet hiçbir maddeye dayandırılmamış |
 | `summary.unknown_source` | hata | Özetin dayanağı olarak var olmayan bir id verilmiş |
 
-Özet ayrıca sayı ve varlık kontrollerinden geçer: dayanağı olarak gösterdiği maddelerin
-toplamına karşı denetlenir. Planın en serbest alanı olduğu için en riskli yeri de orası.
+Özet ayrıca sayı ve varlık kontrollerinden geçer. `summary_source_ids` bir **izlenebilirlik
+sözleşmesi**: boş bırakılamaz, var olmayan id gösteremez. Ama temellendirme yalnızca o
+listeye değil, **havuzun seçilen tamamına** bakar — özet CV'yi özetler, ve CV'de duran
+(dolayısıyla `master.json`'dan gelen) bir şeyi tekrar etmesi uydurma değildir.
+
+### Sonek çözümü — sessiz düzeltme değil
+
+Madde id'leri dil sonekiyle biter (`exp-preunec.rag.en`). İngilizce çalıştırmalarda model bu
+soneki ısrarla düşürüyor: doğru maddeyi seçmiş, sadece ön filtrenin zaten karara bağladığı bir
+muhasebe ekini atlamış oluyor. Havuzda **tek bir aday** varsa id çözülür ve bu bir uyarı
+olarak raporlanır. İki dil varyantı da havuzdaysa çözüm yapılmaz — tahmin etmek guardrail'i
+delerdi.
 
 ### Sayı kontrolü — en sık halüsinasyon biçimi
 
@@ -79,11 +90,18 @@ Bir ad üç yoldan biriyle "temellenmiş" sayılıyor:
 
 1. Kaynak maddenin metninde geçiyor.
 2. Kaynağın `x_meta.tags` listesindeki bir etikete iniyor (`Computer Vision` ↔
-   `computer-vision`). **Bu şart çeviri için gerekli:** İngilizce ilana Türkçe bir maddeden
-   "computer vision" yazmak uydurma değil, çeviridir.
+   `computer-vision`, `machine-learning` ↔ `ML`). **Bu şart çeviri için gerekli:** İngilizce
+   ilana Türkçe bir maddeden "computer vision" yazmak uydurma değil, çeviridir.
 3. Bir etiketin parçası (`rest-api` etiketi hem "REST"i hem "API"yi meşrulaştırır).
 4. Deneyimin kendi bağlamında geçiyor — şirket adı, unvan, dönem. Madde metninde geçmese de
    doğrudur; "Örnek AI bünyesinde FastAPI servisleri çıkardı" uydurma sayılmamalı.
+5. İngilizce çoğulunun tekili temelli (`LLM` → `LLMs`).
+6. Tireli bileşiğin **anlamlı parçalarının hepsi** temelli (`LLM-based`, `RAG-based`).
+   `Django-powered` yine yakalanır: `Django` parçası temelli değil.
+
+3-6 arasındaki gevşetmelerin hepsi gerçek çalıştırmalardaki yanlış alarmlardan doğdu ve
+hepsinin bir regresyon testi var. Kural şu: **biçim farkı uydurma değildir, yeni bilgi
+uydurmadır.**
 
 Ad çıkarımı iki kategoriye ayrılıyor çünkü **yakalama güveni farklı**:
 
@@ -155,5 +173,23 @@ geçmiyor.**
 - **Ad çıkarımı Türkçeye ayarlı.** Cümle başı istisnası ve `İ` katlaması Türkçe metne göre
   yazıldı; başka bir dil eklenirse `extract_entities` gözden geçirilmeli.
 - **Kısaltma açılımı yanlış alarm üretebilir.** Kaynakta "LLM" varken "Large Language Model"
-  yazılırsa `entity.unknown_name` tetiklenir. `--repair` bunu kaynağa döndürerek çözüyor,
-  ama teknik olarak yanlış alarm.
+  yazılırsa `entity.unknown_name` tetiklenir. Ters yön (`machine-learning` → "ML") `tags.yaml`
+  alias'ıyla çözülüyor, ama açılımın kendisi çözülmüyor. `--repair` bunu kaynağa döndürerek
+  aşıyor.
+- **Sonek çözümü yalnızca dil sonekini kapsıyor.** Model id'yi başka bir biçimde bozarsa
+  (harf hatası, tire yerine alt çizgi) çözüm denenmez, ihlal olarak kalır.
+
+## Gerçek çalıştırmalardan gözlem (2026-08-07)
+
+İlk uçtan uca denemelerde guardrail'in yakaladıklarının dökümü — yanlış alarmların hepsi
+düzeltildi, gerçek yakalamalar durdu:
+
+| Bulgu | Tür | Sonuç |
+|---|---|---|
+| Özette "FastAPI", seçilmiş yetenek ama hiçbir maddede yok | yanlış alarm | Temellendirme havuzun tamamına genişletildi |
+| "LLM-based", "RAG-based" | yanlış alarm | Tireli bileşik parçalarından temelleniyor |
+| "LLMs" (çoğul), "ML" (kısaltma) | yanlış alarm | Çoğul eki + `tags.yaml` alias'ı |
+| Tüm id'lerden `.en` soneki düşürülmüş | **gerçek** | Tek adaya çözülüyor, uyarı basılıyor |
+
+Türkçe ve İngilizce çalıştırmaların ikisi de şu an **sıfır ihlalle** geçiyor; üretilen
+`tailored.json` rxresu.me şemasını doğruluyor.

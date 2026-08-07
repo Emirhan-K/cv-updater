@@ -231,6 +231,30 @@ class TestSourceCheck:
 
         assert any(v.rule == "source.unknown" for v in report.errors)
 
+    def test_a_dropped_language_suffix_is_resolved_with_a_warning(
+        self, resume: Resume, pool: CandidatePool, vocabulary: Any
+    ) -> None:
+        """Regresyon: İngilizce çalıştırmada model `.en` sonekini ısrarla düşürüyor."""
+        plan = _plan(_bullet("exp-ai.vision", VISION_TEXT))
+
+        resolved, report = verify(plan, pool, resume, vocabulary=vocabulary)
+
+        assert report.errors == []
+        assert [v.rule for v in report.warnings] == ["source.suffix_dropped"]
+        assert resolved.source_ids() == ["exp-ai.vision.tr"]
+
+    def test_an_ambiguous_prefix_is_not_resolved(
+        self, resume: Resume, pool: CandidatePool, vocabulary: Any
+    ) -> None:
+        """Belirsizlikte tahmin yok: iki aday varsa ihlal olarak kalır."""
+        entry = pool.experiences[0]
+        entry.bullets.append(entry.bullets[0].model_copy(update={"id": "exp-ai.vision.en"}))
+
+        plan = _plan(_bullet("exp-ai.vision", VISION_TEXT))
+        _, report = verify(plan, pool, resume, vocabulary=vocabulary)
+
+        assert [v.rule for v in report.errors] == ["source.unknown"]
+
     def test_a_duplicate_selection_is_reported(
         self, resume: Resume, pool: CandidatePool, vocabulary: Any
     ) -> None:
@@ -340,6 +364,39 @@ class TestEntityCheck:
 
         assert invented_entities("REST API arayüzü açtı.", source).technical == []
 
+    def test_a_hyphenated_compound_is_grounded_by_its_parts(self) -> None:
+        """İlk İngilizce çalıştırmadan gelen regresyon: "LLM-based", "RAG-based"."""
+        from cv_updater.steps.verify import invented_entities
+
+        source = SourceText(id="x", text="Designed LLM and RAG pipelines.", tags=("llm", "rag"))
+        found = invented_entities("Built LLM-based and RAG-based systems.", source)
+        assert (found.technical, found.proper) == ([], [])
+
+    def test_an_english_plural_is_grounded_by_its_singular(self) -> None:
+        """Regresyon: kaynakta "LLM" varken "LLMs" yazmak uydurma değil."""
+        from cv_updater.steps.verify import invented_entities
+
+        source = SourceText(id="x", text="Built an LLM application.", tags=("llm",))
+        found = invented_entities("Built LLMs for production.", source)
+        assert (found.technical, found.proper) == ([], [])
+
+    def test_a_known_abbreviation_is_grounded_by_the_tag(self, vocabulary: Any) -> None:
+        """Regresyon: `machine-learning` etiketi "ML" kısaltmasını meşrulaştırır."""
+        from cv_updater.steps.verify import invented_entities
+
+        source = SourceText(
+            id="x", text="Makine öğrenmesi hattı kurdu.", tags=("machine-learning",)
+        )
+        found = invented_entities("Built ML pipelines.", source, vocabulary)
+        assert found.technical == []
+
+    def test_a_compound_with_an_invented_part_is_still_caught(self) -> None:
+        from cv_updater.steps.verify import invented_entities
+
+        source = SourceText(id="x", text="Designed LLM pipelines.", tags=("llm",))
+        found = invented_entities("Built a Django-powered service.", source)
+        assert "Django-powered" in found.technical + found.proper
+
     def test_the_first_word_of_a_sentence_is_not_a_proper_noun(self) -> None:
         """Türkçede her cümle büyük harfle başlıyor; aksi halde hepsi yanlış alarm olurdu."""
         assert extract_entities("Modelleri servise aldı.").proper == []
@@ -366,6 +423,43 @@ class TestSummaryCheck:
         _, report = verify(plan, pool, resume, vocabulary=vocabulary)
 
         assert any(v.rule == "number.invented" and v.where == "summary" for v in report.errors)
+
+    def test_a_selected_skill_grounds_the_summary(
+        self, resume: Resume, pool: CandidatePool, vocabulary: Any
+    ) -> None:
+        """İlk gerçek çalıştırmadan gelen regresyon.
+
+        Model özette "FastAPI ile mikro servis mimarileri" yazmıştı. FastAPI
+        seçilmiş bir yetenekti ama hiçbir **maddenin metninde** geçmiyordu, ve
+        yalnızca `summary_source_ids`'e bakan kontrol bunu uydurma sayıyordu.
+        Özet CV'yi özetler; CV'de duran bir şeyi tekrar etmesi uydurma değil.
+        """
+        plan = _plan(
+            _bullet("exp-ai.vision.tr", VISION_TEXT),
+            summary="Görüntü işleme ve FastAPI deneyimi olan bir mühendis.",
+            summary_ids=["exp-ai.vision.tr"],
+        )
+
+        _, report = verify(plan, pool, resume, vocabulary=vocabulary)
+
+        assert report.errors == []
+
+    def test_an_unselected_skill_does_not_ground_the_summary(
+        self, resume: Resume, pool: CandidatePool, vocabulary: Any
+    ) -> None:
+        """Gevşetme havuzla sınırlı: seçilmemiş bir yetenek özeti temellendiremez."""
+        for skill in pool.skills:
+            skill.selected = False
+
+        plan = _plan(
+            _bullet("exp-ai.vision.tr", VISION_TEXT),
+            summary="Görüntü işleme ve Flutter deneyimi olan bir mühendis.",
+            summary_ids=["exp-ai.vision.tr"],
+        )
+
+        _, report = verify(plan, pool, resume, vocabulary=vocabulary)
+
+        assert any("Flutter" in violation.message for violation in report.errors)
 
     def test_an_unknown_summary_source_is_caught(
         self, resume: Resume, pool: CandidatePool, vocabulary: Any

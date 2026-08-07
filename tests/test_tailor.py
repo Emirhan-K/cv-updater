@@ -283,3 +283,38 @@ class TestPersistence:
         path = write_plan(tmp_path, result)
 
         assert "Görüntü" in path.read_text(encoding="utf-8")
+
+
+class TestTargetLanguage:
+    """`--lang` ilanın dilini ezebiliyor; modelin bunu görmesi gerekiyor."""
+
+    def test_the_pool_language_is_stated_in_the_prompt(
+        self, analysis: JobAnalysis, pool: CandidatePool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LLM_STRUCTURED_MODE", "tool")
+        client = _FakeClient()
+
+        tailor(analysis, pool, client=client)
+
+        content = client.messages.calls[0]["messages"][0]["content"]
+        assert "Üretilecek CV'nin dili: Türkçe" in content
+
+    def test_a_forced_language_overrides_the_posting_language(
+        self,
+        resume: Resume,
+        analysis: JobAnalysis,
+        vocabulary: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Türkçe ilan + `--lang en`: modele İngilizce yazması söylenmeli."""
+        monkeypatch.setenv("LLM_STRUCTURED_MODE", "tool")
+        english_pool = build_pool(
+            resume, analysis, "Görüntü İşleme", language="en", vocabulary=vocabulary, today=TODAY
+        )
+        client = _FakeClient()
+
+        tailor(analysis, english_pool, client=client)
+
+        content = client.messages.calls[0]["messages"][0]["content"]
+        assert "English" in content
+        assert "Dil: tr" in content  # ilanın dili yine görünüyor, ama bağlayıcı değil

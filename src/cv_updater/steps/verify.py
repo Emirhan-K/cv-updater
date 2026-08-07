@@ -64,6 +64,8 @@ _LOWER = "a-zçğıöşü"
 
 #: "FastAPI", "PostgreSQL", "LanceDB" — küçük harften sonra gelen büyük harf.
 _CAMEL_CASE = re.compile(f"[{_LOWER}][{_UPPER}]")
+#: Tireli/eğik çizgili bileşiği parçalarına ayırır: "LLM-based" → ["LLM", "based"].
+_COMPOUND_SPLIT = re.compile(r"[-–—/]")
 _STARTS_UPPER = re.compile(f"^[{_UPPER}]")
 _HAS_LETTER = re.compile(f"[{_UPPER}{_LOWER}]")
 
@@ -125,6 +127,25 @@ class SourceText:
     @property
     def grounded_text(self) -> str:
         return f"{self.text} {self.context} {' '.join(self.tags)}"
+
+
+def resolve_id(source_id: str, offered: set[str]) -> str | None:
+    """Sonek düşürülmüş bir id'yi havuzdaki karşılığına eşler.
+
+    Madde id'leri dil sonekiyle bitiyor (`exp-preunec.rag.tr`). İngilizce
+    çalıştırmada model soneki ısrarla düşürüyor ve `exp-preunec.rag` yazıyor —
+    doğru maddeyi seçmiş, sadece ön filtrenin zaten karara bağladığı bir
+    muhasebe ekini atlamış oluyor.
+
+    **Yalnızca tek bir aday varsa** çözülür ve bu bir uyarı olarak raporlanır;
+    sessiz bir düzeltme değil. Belirsizlikte (iki dil varyantı da havuzdaysa)
+    çözüm yapılmaz, ihlal olarak kalır — tahmin etmek guardrail'i delerdi.
+    """
+    if source_id in offered:
+        return source_id
+    prefix = f"{source_id}."
+    matches = [item for item in offered if item.startswith(prefix)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def index_sources(resume: Resume) -> dict[str, SourceText]:
@@ -269,23 +290,51 @@ def _is_grounded(entity: str, source: SourceText, vocabulary: TagVocabulary) -> 
     vision" yazılması uydurma değil, çeviridir — kaynağın `x_meta.tags`
     listesinde `computer-vision` duruyor.
     """
-    needle = fold(entity).strip()
-    if not needle:
-        return True
-    if f" {needle} " in fold(source.grounded_text):
+    if _grounded_token(entity, source, vocabulary):
         return True
 
+    # Tireli bileşik: "LLM-based", "RAG-based", "Python-first". Anlamlı olan
+    # parçaların hepsi temelliyse bileşik de temellidir. İlk İngilizce
+    # çalıştırmada iki yanlış alarm tam buradan geldi. "Django-powered" yine
+    # yakalanır: "Django" parçası temelli değil.
+    parts = [part for part in _COMPOUND_SPLIT.split(entity) if part]
+    if len(parts) < 2:
+        return False
+
+    significant = [part for part in parts if _is_technical(part) or _STARTS_UPPER.match(part)]
+    return bool(significant) and all(
+        _grounded_token(part, source, vocabulary) for part in significant
+    )
+
+
+def _grounded_token(entity: str, source: SourceText, vocabulary: TagVocabulary) -> bool:
+    """Tek bir adın kaynakta karşılığı var mı?
+
+    İngilizce çoğul eki de denenir: kaynakta "LLM" varken yeniden ifadede "LLMs"
+    yazmak uydurma değil. (Türkçe ekler zaten kesme işaretinden kesiliyor.)
+    """
     from cv_updater.steps.analyze_job import _normalize_term
 
-    canonical = _normalize_term(entity, vocabulary)
-    if canonical is not None and canonical in source.tags:
-        return True
+    haystack = fold(source.grounded_text)
+    tag_parts = {part for tag in source.tags for part in tag.split("-")}
 
-    # Etiketin parçası da yeterli: `rest-api` etiketi hem "REST"i hem "API"yi
-    # meşrulaştırır — yoksa etiketi bilinen bir terim yalnızca yazıldığı biçimde
-    # geçerli olurdu ve yeniden ifade adımı bunu kaçınılmaz olarak bozardı.
-    parts = {part for tag in source.tags for part in tag.split("-")}
-    return needle in parts
+    candidates = [entity]
+    if len(entity) > 2 and entity.lower().endswith("s"):
+        candidates.append(entity[:-1])
+
+    for candidate in candidates:
+        needle = fold(candidate).strip()
+        if not needle:
+            return True
+        if f" {needle} " in haystack or needle in tag_parts:
+            return True
+        # Etiket eşlemesi kritik: `machine-learning` etiketi "ML" kısaltmasını,
+        # `computer-vision` etiketi "computer vision" çevirisini meşrulaştırır.
+        canonical = _normalize_term(candidate, vocabulary)
+        if canonical is not None and canonical in source.tags:
+            return True
+
+    return False
 
 
 def invented_entities(
@@ -387,10 +436,30 @@ def verify(
     repaired = 0
     seen: set[str] = set()
 
+    # Özet dayanakları ve yetenek/proje seçimleri de aynı sonek düşmesinden
+    # etkileniyor; onları da tek adaya çözülebiliyorsa çöz.
+    plan.summary_source_ids = [
+        resolve_id(item_id, offered) or item_id for item_id in plan.summary_source_ids
+    ]
+    plan.skill_ids = [resolve_id(item_id, offered) or item_id for item_id in plan.skill_ids]
+
     for experience in plan.experiences:
         kept = []
         for bullet in experience.bullets:
             checked += 1
+
+            if (resolved := resolve_id(bullet.source_id, offered)) != bullet.source_id:
+                if resolved is not None:
+                    violations.append(
+                        Violation(
+                            level="warning",
+                            rule="source.suffix_dropped",
+                            where=bullet.source_id,
+                            message=f"Dil soneki düşürülmüş; tek adaya çözüldü: {resolved}",
+                        )
+                    )
+                    bullet.source_id = resolved
+
             source = sources.get(bullet.source_id)
 
             if source is None or bullet.source_id not in offered:
@@ -437,7 +506,7 @@ def verify(
             experience.bullets = kept
 
     summary_found, summary_repaired = _check_summary(
-        plan, sources, vocab, repair=repair, resume=resume
+        plan, sources, vocab, repair=repair, resume=resume, selected=offered
     )
     violations.extend(summary_found)
     checked += 1
@@ -466,12 +535,20 @@ def _check_summary(
     *,
     repair: bool,
     resume: Resume,
+    selected: set[str],
 ) -> tuple[list[Violation], int]:
-    """Özet, dayandığını söylediği maddelerin toplamına karşı denetlenir.
+    """Özet, CV'ye giren malzemenin toplamına karşı denetlenir.
 
     Özet planın en serbest alanı, dolayısıyla en riskli yeri. Kural aynı: içindeki
-    her sayı ve her teknoloji adı, `summary_source_ids`'in gösterdiği maddelerin
-    birinde geçmeli.
+    her sayı ve her ad, CV'de görünen bir kaynakta geçmeli.
+
+    `summary_source_ids` **izlenebilirlik sözleşmesi**: boş bırakılamaz ve var
+    olmayan id gösteremez. Ama temellendirme yalnızca o listeye bakmıyor, havuzun
+    seçilen tamamına bakıyor. Sebebi ilk gerçek çalıştırmada görüldü: model
+    özette "FastAPI ile mikro servis mimarileri" yazmıştı, FastAPI **seçilmiş bir
+    yetenek** olduğu halde hiçbir maddenin metninde geçmediği için uydurma
+    sayılıyordu. Özet CV'yi özetler; CV'de duran ve zaten `master.json`'dan gelen
+    bir şeyi tekrar etmesi uydurma değildir.
     """
     found: list[Violation] = []
     if not plan.summary.strip():
@@ -499,11 +576,17 @@ def _check_summary(
             )
         )
     else:
+        grounding = list(known)
+        grounding += [
+            sources[item_id]
+            for item_id in sorted(selected)
+            if item_id in sources and item_id not in plan.summary_source_ids
+        ]
         merged = SourceText(
             id="summary",
-            text=" ".join(source.text for source in known),
-            tags=tuple({tag for source in known for tag in source.tags}),
-            context=" ".join(source.context for source in known),
+            text=" ".join(source.text for source in grounding),
+            tags=tuple({tag for source in grounding for tag in source.tags}),
+            context=" ".join(source.context for source in grounding),
         )
         found.extend(_check_text("summary", plan.summary, merged, vocabulary))
 

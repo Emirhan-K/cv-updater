@@ -109,6 +109,9 @@ aliases:
   "next js": nextjs
   makine-ogrenmesi: machine-learning
   makine-öğrenmesi: machine-learning
+  # Yaygın kısaltmalar. "cv" BİLEREK yok: bu depoda "CV" özgeçmiş demek.
+  ml: machine-learning
+  dl: deep-learning
   goruntu-isleme: computer-vision
   görüntü-işleme: computer-vision
   bilgisayarli-goru: computer-vision

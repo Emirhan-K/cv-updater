@@ -45,16 +45,19 @@ seçimini ilana yaklaştır. Bir madde ilana uymuyorsa seçme — asla zorlama.
   YANLIŞ: "Led the computer vision team of five engineers."     (ikisi de yok)
 
 Kurallar:
-1. `source_id` alanına YALNIZCA sana verilen havuzdaki id'leri yaz, birebir aynı.
-   Havuzda olmayan bir id yazarsan çıktı reddedilir.
+1. `source_id` alanına YALNIZCA sana verilen havuzdaki id'leri yaz, KARAKTERİ
+   KARAKTERİNE aynı. Id'ler `[köşeli parantez]` içinde veriliyor ve **dil
+   sonekiyle biter** (`.tr` / `.en`). Soneki düşürme, kısaltma, düzeltme:
+   `exp-preunec.rag.en` id'sini `exp-preunec.rag` diye yazarsan çıktı reddedilir.
 2. Her deneyim için en güçlü 3-5 maddeyi seç. Havuzdaki her maddeyi almak zorunda
    değilsin; ilanla ilgisi zayıf olanı bırak ve `omitted_reasons`'a yaz.
 3. Sayılar kutsaldır. Kaynakta "üç ekip" yazıyorsa yeniden ifadede de üçtür.
    Kaynakta sayı yoksa sen sayı uyduramazsın.
 4. `summary` 2-4 cümle, ilanın dilinde, ve YALNIZCA `summary_source_ids` ile
    gösterdiğin maddelerdeki bilgiye dayanmalı. Orada olmayan bir iddia yazma.
-5. Metni ilanın dilinde üret. Türkçe ilana Türkçe, İngilizce ilana İngilizce.
-   Havuzdaki maddeler zaten doğru dilde seçildi.
+5. Metni **kullanıcı mesajındaki "Üretilecek CV'nin dili"** başlığında yazan dilde üret.
+   Bu genelde ilanın dilidir ama zorlanmış olabilir; o satır bağlayıcıdır.
+   Havuzdaki maddeler zaten o dilde seçildi.
 6. `rationale` alanına maddenin ilandaki hangi gereksinimi karşıladığını yaz —
    bu metin uyum raporuna giriyor, aday okuyacak.
 7. Unvan, şirket adı, tarih ve eğitim senin işin değil; onlar sana sorulmadan
@@ -66,6 +69,11 @@ USER_TEMPLATE = """\
 
 {posting}
 
+# Üretilecek CV'nin dili: {language}
+
+`summary` ve tüm `rewritten` alanlarını **bu dilde** yaz. Bu, ilanın dilinden
+farklı olabilir (`--lang` ile zorlanmış olabilir); bu satır bağlayıcıdır.
+
 # Aday havuzu
 
 Aşağıdaki maddelerin dışına çıkamazsın. Skorlar deterministik bir ön filtreden
@@ -73,6 +81,9 @@ geliyor; sıralama önerisidir, bağlayıcı değildir.
 
 {pool}
 """
+
+#: Dil kodunun modele okunur hali — "tr" demek yerine adını yazmak daha güvenilir.
+_LANGUAGE_NAMES = {"tr": "Türkçe", "en": "İngilizce (English)"}
 
 
 def render_posting(analysis: JobAnalysis) -> str:
@@ -160,6 +171,9 @@ def tailor(
 
     content = USER_TEMPLATE.format(
         posting=render_posting(analysis),
+        # Hedef dil ilanın dilinden farklı olabilir (`--lang`). Sistem promptu
+        # "ilanın dilinde yaz" diyor; burası onu ezen tek yer.
+        language=_LANGUAGE_NAMES.get(pool.language, pool.language),
         pool=render_pool(pool),
     )
 
