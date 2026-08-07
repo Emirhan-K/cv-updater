@@ -214,14 +214,23 @@ def _run_sort_key(run_dir: Path) -> tuple[str, int]:
     return (match.group(1), int(match.group(2) or 0))
 
 
-def latest_analysis(root: Path | None = None) -> Path | None:
-    """En son yazılmış `job.json` — `--no-llm` bunu yeniden kullanır."""
+def latest_run_file(filename: str, root: Path | None = None) -> Path | None:
+    """`out/` altındaki en yeni çalıştırmada bulunan dosya, yoksa None.
+
+    `--no-llm` iki LLM adımının çıktısını da (analiz ve plan) buradan
+    yeniden kullanıyor; sıralama dosya adına değil zaman damgasına göre.
+    """
     base = root or OUT_DIR
     if not base.is_dir():
         return None
 
     candidates = sorted(
-        (path for path in base.glob(f"*/{JOB_FILENAME}") if path.is_file()),
+        (path for path in base.glob(f"*/{filename}") if path.is_file()),
         key=lambda path: _run_sort_key(path.parent),
     )
     return candidates[-1] if candidates else None
+
+
+def latest_analysis(root: Path | None = None) -> Path | None:
+    """En son yazılmış `job.json` — `--no-llm` bunu yeniden kullanır."""
+    return latest_run_file(JOB_FILENAME, root)

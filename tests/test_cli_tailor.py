@@ -10,8 +10,16 @@ from typer.testing import CliRunner
 
 from cv_updater.cli import app
 from cv_updater.models.job import JobAnalysis, JobPosting, KeywordMapping, Requirement
+from cv_updater.models.tailor import (
+    SelectedBullet,
+    TailoredExperience,
+    TailorPlan,
+    TailorResult,
+)
 from cv_updater.steps.analyze_job import JOB_FILENAME
 from cv_updater.steps.intake import CLEAN_FILENAME, RAW_FILENAME
+from cv_updater.steps.tailor import PLAN_FILENAME, read_plan
+from cv_updater.steps.verify import VIOLATIONS_FILENAME, read_report
 
 runner = CliRunner()
 
@@ -80,13 +88,43 @@ def _fake_analysis() -> JobAnalysis:
     )
 
 
+def _fake_plan(analysis: Any, pool: Any, **kwargs: Any) -> TailorResult:
+    """Havuzun kendisinden kurulan, guardrail'i temiz geçen bir plan.
+
+    Yeniden ifade **birebir kaynak metni**: bu dosya akışı sınıyor, modelin
+    yeniden ifade kalitesini değil. Guardrail'in kendi testleri `test_verify.py`'de.
+    """
+    experiences = []
+    grounding: list[str] = []
+    for entry in pool.experiences:
+        bullets = [
+            SelectedBullet(source_id=bullet.id, rewritten=bullet.text, rationale="Uyuyor.")
+            for bullet in entry.selected_bullets[:2]
+        ]
+        if bullets:
+            experiences.append(TailoredExperience(source_id=entry.id, bullets=bullets))
+            grounding.append(bullets[0].source_id)
+
+    return TailorResult(
+        plan=TailorPlan(
+            summary="Örnek özet.",
+            summary_source_ids=grounding[:1],
+            experiences=experiences,
+            skill_ids=[skill.id for skill in pool.selected_skills],
+            project_ids=[e.id for e in pool.projects if e.selected_bullets],
+        ),
+        model="sahte",
+    )
+
+
 @pytest.fixture(autouse=True)
-def _stub_analyze(monkeypatch: pytest.MonkeyPatch) -> None:
-    """LLM adımı sahte: bu dosya girdi/çıktı akışını sınar, modeli değil."""
+def _stub_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """İki LLM adımı da sahte: bu dosya girdi/çıktı akışını sınar, modeli değil."""
     monkeypatch.setattr(
         "cv_updater.cli.analyze",
         lambda text, **kwargs: _fake_analysis(),
     )
+    monkeypatch.setattr("cv_updater.cli.tailor_step", _fake_plan)
     monkeypatch.setattr("cv_updater.cli.has_api_key", lambda: True)
 
 
@@ -320,3 +358,97 @@ class TestNoLlm:
         result = runner.invoke(app, ["tailor", str(posting), "--no-llm"])
 
         assert result.exit_code == 0, result.output
+
+    def test_no_llm_reuses_the_previous_plan(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _out_dir: Path
+    ) -> None:
+        """İkinci LLM adımı da atlanır: plan da yeniden kullanılıyor."""
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+        runner.invoke(app, ["tailor", str(posting)])
+
+        def _explode(*args: object, **kwargs: object) -> None:
+            raise AssertionError("--no-llm uyarlama adımını da çağırmamalı")
+
+        monkeypatch.setattr("cv_updater.cli.tailor_step", _explode)
+        result = runner.invoke(app, ["tailor", str(posting), "--no-llm"])
+
+        assert result.exit_code == 0, result.output
+        assert "plan yeniden kullanılıyor" in result.output
+
+
+class TestGuardrail:
+    """Issue 07 — uydurulmuş içerik CLI'den geçemez."""
+
+    def _hallucinating(self, source_id: str = "uydurma-id") -> Any:
+        def _stub(analysis: Any, pool: Any, **kwargs: Any) -> TailorResult:
+            return TailorResult(
+                plan=TailorPlan(
+                    summary="Örnek özet.",
+                    summary_source_ids=[pool.experiences[0].selected_bullets[0].id],
+                    experiences=[
+                        TailoredExperience(
+                            source_id=pool.experiences[0].id,
+                            bullets=[
+                                SelectedBullet(
+                                    source_id=source_id,
+                                    rewritten="Kubernetes kümesini yönetti.",
+                                    rationale="Uyuyor.",
+                                )
+                            ],
+                        )
+                    ],
+                ),
+                model="sahte",
+            )
+
+        return _stub
+
+    def test_a_clean_plan_writes_plan_and_violations(self, tmp_path: Path, _out_dir: Path) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        result = runner.invoke(app, ["tailor", str(posting)])
+
+        run_dir = _only_run_dir(_out_dir)
+        assert result.exit_code == 0, result.output
+        assert (run_dir / PLAN_FILENAME).exists()
+        assert (run_dir / VIOLATIONS_FILENAME).exists()
+        assert read_report(run_dir / VIOLATIONS_FILENAME).violations == []
+
+    def test_a_hallucinated_plan_stops_the_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _out_dir: Path
+    ) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+        monkeypatch.setattr("cv_updater.cli.tailor_step", self._hallucinating())
+
+        result = runner.invoke(app, ["tailor", str(posting)])
+
+        assert result.exit_code == 1
+        assert "Guardrail durdurdu" in result.output
+
+    def test_violations_are_written_even_when_the_run_stops(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _out_dir: Path
+    ) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+        monkeypatch.setattr("cv_updater.cli.tailor_step", self._hallucinating())
+
+        runner.invoke(app, ["tailor", str(posting)])
+
+        report = read_report(_only_run_dir(_out_dir) / VIOLATIONS_FILENAME)
+        assert [v.rule for v in report.errors] == ["source.unknown"]
+
+    def test_repair_continues_and_drops_the_bullet(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _out_dir: Path
+    ) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+        monkeypatch.setattr("cv_updater.cli.tailor_step", self._hallucinating())
+
+        result = runner.invoke(app, ["tailor", str(posting), "--repair"])
+
+        assert result.exit_code == 0, result.output
+        plan = read_plan(_only_run_dir(_out_dir) / PLAN_FILENAME).plan
+        assert plan.source_ids() == []

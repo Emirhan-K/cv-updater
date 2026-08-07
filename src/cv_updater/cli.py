@@ -22,6 +22,7 @@ from cv_updater.llm import (
 from cv_updater.models.candidates import CandidatePool
 from cv_updater.models.job import JobAnalysis, Language
 from cv_updater.models.resume import Resume
+from cv_updater.models.tailor import TailorResult
 from cv_updater.paths import MASTER_JSON
 from cv_updater.steps.analyze_job import (
     JOB_FILENAME,
@@ -41,6 +42,9 @@ from cv_updater.steps.intake import (
 )
 from cv_updater.steps.normalize import MIN_MEANINGFUL_CHARS, normalize
 from cv_updater.steps.score import build_pool, find_run, write_pool
+from cv_updater.steps.tailor import latest_plan, plan_summary, read_plan, write_plan
+from cv_updater.steps.tailor import tailor as tailor_step
+from cv_updater.steps.verify import VerificationReport, verify, write_report
 
 app = typer.Typer(
     name="cv-updater",
@@ -213,12 +217,23 @@ def tailor(
         str | None,
         typer.Option("--lang", help="CV dilini zorla: tr ya da en (varsayılan: ilanın dili)."),
     ] = None,
+    repair: Annotated[
+        bool,
+        typer.Option(
+            "--repair",
+            help="Guardrail ihlalinde durma: ihlalli maddeyi kaynak metnine döndür ve devam et.",
+        ),
+    ] = False,
 ) -> None:
     """İlana göre tailored.json + match_report.md üret (LLM adımı).
 
-    Şu an issue 04-06 kapsamı çalışıyor: ilan okunur, normalize edilir,
-    `JobPosting` olarak yapılandırılır, ardından deterministik ön filtre
-    `candidates.json`'ı üretir. Uyarlama (07-09) eklenecek.
+    Şu an issue 04-07 kapsamı çalışıyor: ilan okunur, normalize edilir,
+    `JobPosting` olarak yapılandırılır, deterministik ön filtre `candidates.json`'ı
+    üretir, ve uyarlama adımı dürüstlük guardrail'i altında `plan.json` +
+    `violations.json` yazar. `tailored.json` (08) ve rapor (09) eklenecek.
+
+    Guardrail varsayılan olarak **katıdır**: bir ihlal bulunursa adım durur ve
+    hiçbir şey üretilmez. `--repair` ihlalli metni kaynağına döndürüp sürdürür.
     """
     try:
         src = read_source(source, paste=paste)
@@ -257,10 +272,109 @@ def tailor(
 
     _print_analysis(analysis)
 
-    pool = _score_step(run_dir, analysis, result.text, master=master, lang=_parse_lang(lang))
+    resume = _load(master or MASTER_JSON)
+    pool = _score_step(run_dir, resume, analysis, result.text, lang=_parse_lang(lang))
     _print_pool(pool)
 
-    console.print("\n[yellow]Uyarlama adımı henüz uygulanmadı (issue 07-09).[/yellow]")
+    _tailor_step(run_dir, resume, analysis, pool, repair=repair, no_llm=no_llm)
+
+    console.print(
+        "\n[yellow]tailored.json ve uyum raporu henüz üretilmiyor (issue 08-09).[/yellow]"
+    )
+
+
+def _tailor_step(
+    run_dir: Path,
+    resume: Resume,
+    analysis: JobAnalysis,
+    pool: CandidatePool,
+    *,
+    repair: bool,
+    no_llm: bool = False,
+) -> TailorResult | None:
+    """Uyarlama + guardrail. İhlal varsa `--repair` yoksa burada durur."""
+    result = _plan_source(analysis, pool, no_llm=no_llm)
+    if result is None:
+        return None
+
+    plan, report = verify(result.plan, pool, resume, repair=repair)
+    result.plan = plan
+    result.repaired = repair and report.repaired > 0
+
+    plan_path = write_plan(run_dir, result)
+    report_path = write_report(run_dir, report)
+    console.print(f"[green]✓[/green] {escape(str(plan_path))}")
+    console.print(f"[green]✓[/green] {escape(str(report_path))}")
+
+    _print_plan(result, report)
+
+    if report.errors and not repair:
+        console.print(
+            "\n[bold red]✗ Guardrail durdurdu.[/bold red] Uydurulmuş içerik CV'ye giremez.\n"
+            "[dim]--repair ile ihlalli maddeler kaynak metnine döndürülüp akış sürdürülür.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    return result
+
+
+def _plan_source(
+    analysis: JobAnalysis, pool: CandidatePool, *, no_llm: bool
+) -> TailorResult | None:
+    """Planı ya modelden alır ya da `--no-llm` ile öncekini yeniden kullanır."""
+    if no_llm:
+        previous = latest_plan()
+        if previous is None:
+            console.print(
+                "[dim]--no-llm: yeniden kullanılacak bir plan.json yok, "
+                "uyarlama adımı atlandı.[/dim]"
+            )
+            return None
+        result = read_plan(previous)
+        console.print(
+            f"[dim]--no-llm: {escape(previous.parent.name)} çalıştırmasındaki plan "
+            "yeniden kullanılıyor.[/dim]"
+        )
+        return result
+
+    if not has_api_key():
+        console.print(f"[bold red]✗[/bold red] {escape(str(MissingAPIKeyError()))}")
+        raise typer.Exit(code=2)
+
+    with console.status("[dim]CV uyarlanıyor…[/dim]"):
+        try:
+            return tailor_step(analysis, pool, client=None)
+        except StructuredOutputError as exc:
+            console.print(f"[bold red]✗ Uyarlama başarısız:[/bold red] {escape(str(exc))}")
+            raise typer.Exit(code=1) from exc
+
+
+def _print_plan(result: TailorResult, report: VerificationReport) -> None:
+    """Planın ve guardrail sonucunun özeti."""
+    table = Table(title="uyarlama", title_style="bold", show_header=False)
+    table.add_column(style="dim")
+    table.add_column(justify="right")
+    for key, value in plan_summary(result).items():
+        table.add_row(key, str(value))
+    table.add_row("denetlenen", str(report.checked))
+    table.add_row("ihlal", f"{len(report.errors)} hata, {len(report.warnings)} uyarı")
+    if result.repaired:
+        table.add_row("onarılan", str(report.repaired))
+    console.print(table)
+
+    for violation in [*report.errors, *report.warnings]:
+        style = "bold red" if violation.level == "error" else "yellow"
+        label = "İHLAL" if violation.level == "error" else "uyarı"
+        console.print(
+            f"[{style}]{label}[/{style}] [dim]{escape(violation.rule)}[/dim] "
+            f"{escape(violation.where)}"
+        )
+        console.print(f"    {escape(violation.message)}")
+        if violation.repaired_with:
+            console.print(f"    [green]→ {escape(violation.repaired_with)}[/green]")
+
+    if not report.violations:
+        console.print("[bold green]✓ Guardrail temiz: sıfır ihlal.[/bold green]")
 
 
 def _parse_lang(value: str | None) -> Language | None:
@@ -276,14 +390,13 @@ def _parse_lang(value: str | None) -> Language | None:
 
 def _score_step(
     run_dir: Path,
+    resume: Resume,
     analysis: JobAnalysis,
     posting_text: str,
     *,
-    master: Path | None,
     lang: Language | None,
 ) -> CandidatePool:
     """Deterministik ön filtreyi çalıştırır ve `candidates.json`'ı yazar."""
-    resume = _load(master or MASTER_JSON)
     pool = build_pool(
         resume,
         analysis,
@@ -402,7 +515,8 @@ def score(
         )
 
     console.print(f"[dim]çalıştırma:[/dim] {escape(run_dir.name)}")
-    pool = _score_step(run_dir, analysis, posting_text, master=master, lang=_parse_lang(lang))
+    resume = _load(master or MASTER_JSON)
+    pool = _score_step(run_dir, resume, analysis, posting_text, lang=_parse_lang(lang))
     _print_pool(pool, verbose=True)
 
 
