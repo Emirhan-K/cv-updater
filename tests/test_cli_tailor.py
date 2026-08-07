@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
+from jsonschema import Draft202012Validator
 from typer.testing import CliRunner
 
 from cv_updater.cli import app
@@ -18,6 +20,7 @@ from cv_updater.models.tailor import (
 )
 from cv_updater.steps.analyze_job import JOB_FILENAME
 from cv_updater.steps.intake import CLEAN_FILENAME, RAW_FILENAME
+from cv_updater.steps.render_json import TAILORED_FILENAME, has_ligatures
 from cv_updater.steps.tailor import PLAN_FILENAME, read_plan
 from cv_updater.steps.verify import VIOLATIONS_FILENAME, read_report
 
@@ -452,3 +455,86 @@ class TestGuardrail:
         assert result.exit_code == 0, result.output
         plan = read_plan(_only_run_dir(_out_dir) / PLAN_FILENAME).plan
         assert plan.source_ids() == []
+
+
+class TestTailoredJson:
+    """Issue 08 — aracın asıl ürünü."""
+
+    def test_tailored_json_is_written(self, tmp_path: Path, _out_dir: Path) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        result = runner.invoke(app, ["tailor", str(posting)])
+
+        assert result.exit_code == 0, result.output
+        assert (_only_run_dir(_out_dir) / TAILORED_FILENAME).exists()
+
+    def test_it_validates_against_the_schema(
+        self, tmp_path: Path, _out_dir: Path, rxresume_schema: dict[str, Any]
+    ) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        result = runner.invoke(app, ["tailor", str(posting)])
+
+        payload = json.loads(
+            (_only_run_dir(_out_dir) / TAILORED_FILENAME).read_text(encoding="utf-8")
+        )
+        assert list(Draft202012Validator(rxresume_schema).iter_errors(payload)) == []
+        assert "şemasına uyuyor" in result.output
+
+    def test_the_ligature_in_the_posting_never_reaches_the_cv(
+        self, tmp_path: Path, _out_dir: Path
+    ) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        runner.invoke(app, ["tailor", str(posting)])
+
+        payload = (_only_run_dir(_out_dir) / TAILORED_FILENAME).read_text(encoding="utf-8")
+        assert has_ligatures(payload) == []
+
+    def test_lang_option_sets_the_locale(self, tmp_path: Path, _out_dir: Path) -> None:
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        runner.invoke(app, ["tailor", str(posting), "--lang", "en"])
+
+        payload = json.loads(
+            (_only_run_dir(_out_dir) / TAILORED_FILENAME).read_text(encoding="utf-8")
+        )
+        assert payload["metadata"]["page"]["locale"] == "en-US"
+
+    def test_a_blocked_guardrail_produces_no_cv(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _out_dir: Path
+    ) -> None:
+        """Kabul kriteri: ihlal varsa `tailored.json` hiç üretilmez."""
+        posting = tmp_path / "job.txt"
+        posting.write_text(POSTING, encoding="utf-8")
+
+        def _stub(analysis: Any, pool: Any, **kwargs: Any) -> TailorResult:
+            return TailorResult(
+                plan=TailorPlan(
+                    summary="Örnek özet.",
+                    summary_source_ids=[pool.experiences[0].selected_bullets[0].id],
+                    experiences=[
+                        TailoredExperience(
+                            source_id=pool.experiences[0].id,
+                            bullets=[
+                                SelectedBullet(
+                                    source_id="uydurma-id",
+                                    rewritten="Kubernetes kümesini yönetti.",
+                                    rationale="x",
+                                )
+                            ],
+                        )
+                    ],
+                ),
+                model="sahte",
+            )
+
+        monkeypatch.setattr("cv_updater.cli.tailor_step", _stub)
+        result = runner.invoke(app, ["tailor", str(posting)])
+
+        assert result.exit_code == 1
+        assert not (_only_run_dir(_out_dir) / TAILORED_FILENAME).exists()

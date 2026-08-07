@@ -58,9 +58,13 @@ Her çalıştırma **yeni** bir dizin açar:
 
 ```
 out/<slug>-<YYYYAAGG>-<SSDDss>/
-  job_raw.txt      ilanın diskteki hali — hiç dokunulmamış
-  job_clean.txt    normalize edilmiş metin (LLM bunu görür)
-  job.json         yapılandırılmış analiz + etiket eşlemesi
+  job_raw.txt        ilanın diskteki hali — hiç dokunulmamış
+  job_clean.txt      normalize edilmiş metin (LLM bunu görür)
+  job.json           yapılandırılmış analiz + etiket eşlemesi
+  candidates.json    ön filtrenin puanladığı aday havuzu (LLM yok)
+  plan.json          modelin seçimi + yeniden ifadeleri
+  violations.json    guardrail denetimi — temiz çalıştırmada da yazılır
+  tailored.json      ★ Reactive Resume'a import edilecek CV
 ```
 
 **Önceki çıktı asla ezilmez.** Aynı ilanı iki kez çalıştırmak iki dizin üretir; bu kasıtlı,
@@ -101,17 +105,64 @@ Yine de devam edilsin mi? [y/N]:
 Eşik **temizlenmiş** metin üzerinden ölçülür — 20 satır "Kaydet"/"Paylaş" eşiği şişirmez.
 Soruyu atlamak için `--yes`.
 
+## `tailored.json`'ı Reactive Resume'a aktarmak
+
+1. [rxresu.me](https://rxresu.me) hesabına gir.
+2. Dashboard'da **Create a new resume** yanındaki menüden **Import** → **JSON**.
+3. `out/<slug>-<damga>/tailored.json` dosyasını seç, **Validate** de.
+4. Doğrulama geçtiyse **Import**. Araç dosyayı zaten aynı şemaya karşı doğruluyor;
+   ekranda "✓ Reactive Resume şemasına uyuyor" gördüysen bu adım sorun çıkarmaz.
+5. İçe aktarılan CV'yi aç, sağ üstten **PDF** olarak indir.
+
+İçe aktarma sonrası bilmen gerekenler:
+
+- **Seçilmeyen hiçbir şey silinmedi**, `hidden: true` yapıldı. Bir yeteneği ya da deneyimi
+  geri istiyorsan editörde göz ikonuna tıklaman yeterli — yeniden yazman gerekmiyor.
+- **Unvan, şirket adı ve tarihler `master.json` ile birebir aynı.** Bu alanlar modele hiç
+  gösterilmiyor (bkz. [`GUARDRAILS.md`](GUARDRAILS.md)).
+- **Ligatürler kapalı**: `metadata.stylesheet` `font-variant-ligatures: none` taşıyor, ve
+  metindeki ligatür karakterleri zaten temizlenmiş durumda. PDF'te "fine-tuning" araması
+  çalışmalı — issue 10 bunu otomatik doğrulayacak.
+- Dil `--lang` ile zorlanmadıysa ilanın dilinden gelir; `metadata.page.locale` ona göre
+  `tr-TR` ya da `en-US` olur.
+
+## Guardrail durdurursa
+
+Uydurulmuş içerik varsayılan olarak akışı durdurur:
+
+```
+✗ Guardrail durdurdu. Uydurulmuş içerik CV'ye giremez.
+```
+
+`violations.json` hangi maddede ne bulunduğunu yazar. İki seçenek:
+
+```bash
+uv run cv-updater tailor ilan.txt --repair   # ihlalli metni kaynağına döndür, devam et
+uv run cv-updater tailor ilan.txt            # baştan dene (model farklı bir plan üretebilir)
+```
+
+`--repair` bir gevşetme değil: uydurulan metin atılır, `master.json`'daki gerçek metin geri
+gelir. Kural listesi [`GUARDRAILS.md`](GUARDRAILS.md)'de.
+
 ## LLM'e gitmeden çalıştırmak
 
 ```bash
 uv run cv-updater tailor ilan.txt --no-llm
 ```
 
-En son üretilen `job.json`'ı yeniden kullanır, API'ye gitmez. Sonraki adımlar (ön filtre,
-uyarlama) üzerinde çalışırken her denemede model ücreti/kotası harcamamak için.
+**İki LLM adımını da** atlar: en son üretilen `job.json` ve `plan.json` yeniden kullanılır.
+Derleme ve raporlama üzerinde çalışırken her denemede kota harcamamak için.
 
 Uyarı: araç hangi çalıştırmadan kopyaladığını yazar. **Aynı ilan olduğundan emin ol** —
-başka bir ilanın analizini yeniden kullanmak sessiz bir hata olurdu.
+başka bir ilanın analizini yeniden kullanmak sessiz bir hata olurdu. (Planda değil: farklı
+bir ilanın planı guardrail'e `source.not_offered` olarak takılır.)
+
+Yalnızca ön filtreyi tekrar çalıştırmak için ayrı bir komut var, o hiç LLM'e gitmez:
+
+```bash
+uv run cv-updater score <slug>              # puanlamayı tabloyla göster
+uv run cv-updater score novatek --lang en   # aynı ilan, İngilizce havuz
+```
 
 ## Yapılandırma
 
@@ -139,10 +190,12 @@ Gateway kullanıyorsan **Docker Desktop açık olmalı**; kapalıysa `Connection
 | `Connection refused` | Gateway kapalı — `docker compose up -d` (llm-gateway dizininde). |
 | `sözlükte yok: ...` satırı | İlandaki terimin `data/tags.yaml`'da karşılığı yok. Karşılığı varsa alias ekle; yoksa sorun değil, bilgi amaçlı. |
 | `ilanda bulunamadı, atıldı: ...` | Model ilanda geçmeyen bir terim üretmiş; süzgeç attı. Beklenen davranış. |
+| `model kaçırmış: ...` | Geri çağırma ağı ilanda olup modelin bildirmediği etiketleri buldu. Puanlamaya dahil edildiler; bilgi amaçlı. |
+| `süper sette yok: ...` | İlanın istediği bir konu `master.json`'da yok. Gerçekten biliyorsan ekle, bilmiyorsan uyum raporu bunu "eksik" diye yazacak. |
+| `Guardrail durdurdu` | Model uydurmuş. `violations.json`'a bak, `--repair` ile sürdür. |
 | `Editör bulunamadı` | `CV_UPDATER_EDITOR` ya da `EDITOR` ayarla. |
 
 ## Sonraki adım
 
-`job.json` üretildikten sonrası henüz uygulanmadı: ön filtre (issue 06), LLM uyarlaması ve
-dürüstlük guardrail'i (07), `tailored.json` (08), uyum raporu (09), ATS öz-kontrolü (10).
-Plan [`ROADMAP.md`](ROADMAP.md)'de.
+`tailored.json`'a kadar olan her şey çalışıyor. Kalanlar: uyum raporu (issue 09),
+ATS öz-kontrolü (10), RenderCV ile otomatik PDF (11). Plan [`ROADMAP.md`](ROADMAP.md)'de.

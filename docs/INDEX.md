@@ -34,6 +34,8 @@ steps/analyze_job.py   LLM analizi + halüsinasyon süzgeci + etiket eşlemesi
 steps/score.py         deterministik ön filtre + geri çağırma ağı (LLM yok)
 steps/tailor.py        LLM uyarlama adımı — havuzdan seçim + yeniden ifade
 steps/verify.py        dürüstlük guardrail'i: planı master.json'a karşı denetler
+steps/render_json.py   tailored.json derlemesi + rxresu.me şema doğrulaması
+schema/                rxresu.me şema anlık görüntüsü (--refresh-schema ile yenilenir)
 data/                  master.json (gitignore) · master.example.json · tags.yaml
 out/                   çalıştırma başına bir dizin (gitignore)
 ```

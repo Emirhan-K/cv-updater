@@ -20,21 +20,36 @@ job_raw.txt + job_clean.txt
    │                   + tags.yaml eşlemesi               [deterministik]
 job.json
    │
-   │  4. ön filtre     etiket/anahtar kelime puanlama     [deterministik]  ← issue 06
+   │  4. ön filtre     etiket puanlama + geri çağırma ağı [deterministik]
    ▼
-aday madde listesi
+candidates.json
    │
-   │  5. uyarlama      seçim + yeniden ifade              [LLM]            ← issue 07
-   ▼                   dürüstlük guardrail'i              [deterministik]
-tailored.json + match_report.md                                            ← issue 08-09
-   │
-   │  6. ATS kontrolü  PDF'ten metni geri oku, puanla     [deterministik]  ← issue 10
+   │  5. uyarlama      havuzdan seçim + yeniden ifade     [LLM]
    ▼
-uyum raporu
+plan.json
+   │
+   │  6. guardrail     kaynak / sayı / varlık / dayanak   [deterministik]
+   ▼
+violations.json   ── ihlal varsa (ve --repair yoksa) akış BURADA durur
+   │
+   │  7. derleme      plan + master.json → CV             [deterministik]
+   ▼                  + rxresu.me şema doğrulaması
+tailored.json
+   │
+   │  8. uyum raporu   skor, gerekçe, eksik kelimeler     [deterministik]  ← issue 09
+   ▼
+match_report.md
+   │
+   │  9. ATS kontrolü  PDF'ten metni geri oku, puanla     [deterministik]  ← issue 10
+   ▼
+ats raporu
 ```
 
-**Boru hattında ağa çıkan tek iki nokta 3 ve 5.** Aradaki her şey API çağrısı olmadan
+**Boru hattında ağa çıkan tek iki nokta 3 ve 5.** Diğer her şey API çağrısı olmadan
 assert edilebilir; testler ağa çıkmaz (soket seviyesinde bloklanır, bkz. `tests/conftest.py`).
+Her LLM adımının hemen ardından deterministik bir denetim geliyor — 3'ten sonra halüsinasyon
+süzgeci, 5'ten sonra guardrail. **Modelin söylediği hiçbir şey doğrulanmadan bir sonraki
+adıma geçmiyor.**
 
 ---
 
@@ -138,18 +153,83 @@ böyle üretti.)
 
 ### `--no-llm`
 
-3. adımı atlar, en son yazılmış `job.json`'ı yeniden kullanır. "En son", dizin adının
-sonundaki zaman damgasından bulunur — dizin adına göre alfabetik sıralamak yanlış olurdu,
-çünkü slug adın başında.
+**İki LLM adımını da** atlar: en son yazılmış `job.json` ve `plan.json` yeniden kullanılır.
+"En son", dizin adının sonundaki zaman damgasından bulunur — dizin adına göre alfabetik
+sıralamak yanlış olurdu, çünkü slug adın başında. Plan yoksa akış ön filtreden sonra durur.
 
-## 4-6. Henüz uygulanmadı
+Plan aday havuzuna bağlı olduğu için başka bir ilanın planını yeniden kullanmak guardrail'i
+`source.not_offered` ile tetikler. Bu istenen davranış: uyuşmazlık sessizce geçmez.
+
+## 4. Deterministik ön filtre — `steps/score.py`
+
+| | |
+|---|---|
+| **Girdi** | `job.json` + `master.json` + `tags.yaml` |
+| **Çıktı** | `CandidatePool` |
+| **Dosya** | `candidates.json` |
+| **Ağ** | yok |
+
+`master.json` maddeleri ilanın etiket profiline karşı puanlanır; dil süzgeci, üst sınırlar ve
+`always_include` muafiyeti uygulanır. Ayrıca **geri çağırma ağı** çalışır: `tags.yaml`'ın
+tamamı ilan metninde aranıp modelin bildirmedikleri raporlanır.
+
+Formül, ağırlıkların gerekçesi ve üst sınırlar: [`SCORING.md`](SCORING.md).
+
+## 5. Uyarlama — `steps/tailor.py`
+
+| | |
+|---|---|
+| **Girdi** | `job.json` özeti + `candidates.json` havuzu |
+| **Çıktı** | `TailorPlan` |
+| **Dosya** | `plan.json` |
+| **Ağ** | **var** — ikinci ve son LLM çağrısı |
+
+Modele **süper set değil havuz** gider; ham ilan metni ikinci kez gönderilmez (havuzda olmayan
+bir teknolojiyi hatırlatmak uydurmayı davet ederdi). Modelin döndürebildiği tek şey id'ler ve
+o id'lerin yeniden ifadesi.
+
+## 6. Guardrail — `steps/verify.py`
+
+| | |
+|---|---|
+| **Girdi** | `plan.json` + `candidates.json` + `master.json` |
+| **Çıktı** | `VerificationReport` |
+| **Dosya** | `violations.json` (temiz çalıştırmada da yazılır) |
+| **Ağ** | yok |
+
+Kaynak, sayı, varlık ve dayanak kontrolleri. Varsayılan katı: bir hata varsa akış durur ve
+`tailored.json` **üretilmez**. `--repair` ihlalli metni kaynağına döndürüp sürdürür.
+
+Kural listesi ve tasarım gerekçesi: [`GUARDRAILS.md`](GUARDRAILS.md).
+
+## 7. Derleme — `steps/render_json.py`
+
+| | |
+|---|---|
+| **Girdi** | `master.json` + doğrulanmış plan + havuz |
+| **Çıktı** | `Resume` |
+| **Dosya** | `tailored.json` |
+| **Ağ** | yok |
+
+- `basics`, eğitim, diller, şirket adı, unvan, tarih, roller **doğrudan `master.json`'dan**
+- `summary.content` = `<p>…</p>`, deneyim `description` = `<ul><li>…</li></ul>`
+- proje maddeleri ön filtrenin seçtiği haliyle, **yeniden ifade edilmeden**
+- seçilmeyen öğe silinmez, `hidden: true` olur
+- `metadata.page.locale` dile göre (`tr-TR` / `en-US`)
+- `metadata.stylesheet` ligatürleri render seviyesinde kapatır; karakter seviyesi ayrıca
+  temizlenir
+- `x_meta` / `x_bullets` çıktıdan tamamen silinir — süper set paylaşılan dosyaya sızmaz
+- her öğeye çalıştırmaya özgü yeni `id` (UUID5) verilir, import'ta çakışma olmasın
+
+Çıktı, depodaki rxresu.me şema anlık görüntüsüne karşı doğrulanır; hata varsa çıkış kodu 1.
+Anlık görüntü `cv-updater validate --refresh-schema` ile yenilenir (**ağa çıkan tek yardımcı
+komut**) ve değişiklik commit'lenmelidir.
+
+## 8-9. Henüz uygulanmadı
 
 | Adım | Issue | Girdi | Çıktı |
 |---|---|---|---|
-| Deterministik ön filtre | 06 | `job.json` + `master.json` | aday madde listesi |
-| LLM uyarlama + guardrail | 07 | aday listesi | seçilmiş + yeniden ifade edilmiş maddeler |
-| `tailored.json` | 08 | seçim | Reactive Resume'a import edilebilir JSON |
-| `match_report.md` | 09 | seçim + `job.json` | uyum skoru, gerekçe, eksik anahtar kelimeler |
+| `match_report.md` | 09 | plan + havuz + `job.json` | uyum skoru, gerekçe, eksik anahtar kelimeler |
 | ATS öz-kontrolü | 10 | üretilen PDF | metin geri okuma + puanlama |
 
 ## `job.json` şeması

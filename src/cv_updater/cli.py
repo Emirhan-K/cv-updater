@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
 import typer
+from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 from rich.console import Console
 from rich.markup import escape
@@ -22,8 +24,9 @@ from cv_updater.llm import (
 from cv_updater.models.candidates import CandidatePool
 from cv_updater.models.job import JobAnalysis, Language
 from cv_updater.models.resume import Resume
-from cv_updater.models.tailor import TailorResult
+from cv_updater.models.tailor import TailorPlan, TailorResult
 from cv_updater.paths import MASTER_JSON
+from cv_updater.schema import rxresume_schema
 from cv_updater.steps.analyze_job import (
     JOB_FILENAME,
     analyze,
@@ -41,6 +44,7 @@ from cv_updater.steps.intake import (
     write_run_files,
 )
 from cv_updater.steps.normalize import MIN_MEANINGFUL_CHARS, normalize
+from cv_updater.steps.render_json import has_ligatures, render, write_tailored
 from cv_updater.steps.score import build_pool, find_run, write_pool
 from cv_updater.steps.tailor import latest_plan, plan_summary, read_plan, write_plan
 from cv_updater.steps.tailor import tailor as tailor_step
@@ -148,11 +152,22 @@ def validate(
         bool,
         typer.Option("--strict", help="Uyarıları da hata say."),
     ] = False,
+    refresh_schema_flag: Annotated[
+        bool,
+        typer.Option(
+            "--refresh-schema",
+            help="rxresu.me şemasının depodaki anlık görüntüsünü yenile (ağa çıkar).",
+        ),
+    ] = False,
 ) -> None:
     """master.json'ı şemaya karşı doğrula ve içerik lint'i çalıştır.
 
-    LLM kullanmaz, ağa çıkmaz, API anahtarı gerektirmez.
+    LLM kullanmaz, API anahtarı gerektirmez ve `--refresh-schema` verilmedikçe
+    ağa çıkmaz.
     """
+    if refresh_schema_flag:
+        _refresh_schema()
+
     path = master or MASTER_JSON
 
     if fix and path.exists():
@@ -179,6 +194,28 @@ def validate(
         console.print(f"[bold red]✗ {summary}[/bold red]")
         raise typer.Exit(code=1)
     console.print(f"[yellow]⚠ {summary}[/yellow] [dim](--strict ile hata sayılır)[/dim]")
+
+
+def _refresh_schema() -> None:
+    """Canlı şemayı çekip anlık görüntüyü günceller.
+
+    Anlık görüntü elle yenileniyor (`TODO.md` teknik borç kalemi); bu bayrak o
+    işi tek komuta indiriyor. Değişiklik çıkarsa **commit'lenmesi** gerekiyor.
+    """
+    from cv_updater.schema import SCHEMA_URL, refresh_schema
+
+    try:
+        path, changed = refresh_schema()
+    except OSError as exc:
+        console.print(f"[bold red]✗ Şema çekilemedi:[/bold red] {escape(str(exc))}")
+        console.print(f"[dim]{SCHEMA_URL}[/dim]")
+        raise typer.Exit(code=2) from exc
+
+    if changed:
+        console.print(f"[yellow]⟳ Şema güncellendi:[/yellow] {escape(str(path))}")
+        console.print("[dim]Değişikliği commit'lemeyi unutma — testler bu dosyaya bakıyor.[/dim]")
+    else:
+        console.print("[green]✓[/green] Şema zaten güncel.")
 
 
 @app.command()
@@ -276,11 +313,50 @@ def tailor(
     pool = _score_step(run_dir, resume, analysis, result.text, lang=_parse_lang(lang))
     _print_pool(pool)
 
-    _tailor_step(run_dir, resume, analysis, pool, repair=repair, no_llm=no_llm)
+    plan = _tailor_step(run_dir, resume, analysis, pool, repair=repair, no_llm=no_llm)
+    if plan is None:
+        return
+
+    _render_step(run_dir, resume, plan.plan, pool, lang=_parse_lang(lang))
+
+    console.print("\n[yellow]Uyum raporu henüz üretilmiyor (issue 09).[/yellow]")
+
+
+def _render_step(
+    run_dir: Path,
+    resume: Resume,
+    plan: TailorPlan,
+    pool: CandidatePool,
+    *,
+    lang: Language | None,
+) -> Path:
+    """Planı `tailored.json`'a derler ve canlı şemaya karşı doğrular."""
+    doc = render(resume, plan, pool, language=lang, run_id=run_dir.name)
+    path = write_tailored(run_dir, doc)
+    payload = path.read_text(encoding="utf-8")
+
+    console.print(f"[green]✓[/green] {escape(str(path))}")
+
+    errors = sorted(
+        Draft202012Validator(rxresume_schema()).iter_errors(json.loads(payload)), key=str
+    )
+    if errors:
+        console.print(f"[bold red]✗ Şema hatası ({len(errors)}):[/bold red]")
+        for error in errors[:10]:
+            where = ".".join(str(part) for part in error.path) or "<root>"
+            console.print(f"  [red]•[/red] {escape(where)}: {escape(error.message)}")
+        raise typer.Exit(code=1)
+
+    if ligatures := has_ligatures(payload):
+        # Buraya düşmek bir hata: `to_json` ligatürleri zaten temizliyor.
+        console.print(f"[bold red]✗ Ligatür karakteri kaldı:[/bold red] {ligatures}")
+        raise typer.Exit(code=1)
 
     console.print(
-        "\n[yellow]tailored.json ve uyum raporu henüz üretilmiyor (issue 08-09).[/yellow]"
+        "[bold green]✓ Reactive Resume şemasına uyuyor.[/bold green] "
+        "[dim]rxresu.me → Import → JSON ile içe aktar[/dim]"
     )
+    return path
 
 
 def _tailor_step(
