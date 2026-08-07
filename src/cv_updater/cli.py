@@ -19,16 +19,19 @@ from cv_updater.llm import (
     has_api_key,
     load_dotenv_once,
 )
-from cv_updater.models.job import JobAnalysis
+from cv_updater.models.candidates import CandidatePool
+from cv_updater.models.job import JobAnalysis, Language
 from cv_updater.models.resume import Resume
 from cv_updater.paths import MASTER_JSON
 from cv_updater.steps.analyze_job import (
+    JOB_FILENAME,
     analyze,
     latest_analysis,
     read_analysis,
     write_analysis,
 )
 from cv_updater.steps.intake import (
+    CLEAN_FILENAME,
     IntakeError,
     new_run_dir,
     read_source,
@@ -37,6 +40,7 @@ from cv_updater.steps.intake import (
     write_run_files,
 )
 from cv_updater.steps.normalize import MIN_MEANINGFUL_CHARS, normalize
+from cv_updater.steps.score import build_pool, find_run, write_pool
 
 app = typer.Typer(
     name="cv-updater",
@@ -201,12 +205,20 @@ def tailor(
             help="LLM'e gitme; en son üretilen job.json'ı yeniden kullan.",
         ),
     ] = False,
+    master: Annotated[
+        Path | None,
+        typer.Option("--master", "-m", help="Süper set (varsayılan: data/master.json)."),
+    ] = None,
+    lang: Annotated[
+        str | None,
+        typer.Option("--lang", help="CV dilini zorla: tr ya da en (varsayılan: ilanın dili)."),
+    ] = None,
 ) -> None:
     """İlana göre tailored.json + match_report.md üret (LLM adımı).
 
-    Şu an issue 04-05 kapsamı çalışıyor: ilan okunur, normalize edilir,
-    `JobPosting` olarak yapılandırılır ve `out/<slug>/` altına yazılır.
-    Ön filtre (06) ve uyarlama (07-09) eklenecek.
+    Şu an issue 04-06 kapsamı çalışıyor: ilan okunur, normalize edilir,
+    `JobPosting` olarak yapılandırılır, ardından deterministik ön filtre
+    `candidates.json`'ı üretir. Uyarlama (07-09) eklenecek.
     """
     try:
         src = read_source(source, paste=paste)
@@ -244,7 +256,44 @@ def tailor(
     console.print(f"[green]✓[/green] {escape(str(job_path))}")
 
     _print_analysis(analysis)
-    console.print("\n[yellow]Ön filtre ve uyarlama henüz uygulanmadı (issue 06-09).[/yellow]")
+
+    pool = _score_step(run_dir, analysis, result.text, master=master, lang=_parse_lang(lang))
+    _print_pool(pool)
+
+    console.print("\n[yellow]Uyarlama adımı henüz uygulanmadı (issue 07-09).[/yellow]")
+
+
+def _parse_lang(value: str | None) -> Language | None:
+    """`--lang` değerini doğrular. Şema iki dil tanıyor; üçüncüsü sessizce geçmemeli."""
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized not in ("tr", "en"):
+        console.print(f"[bold red]✗[/bold red] --lang yalnızca 'tr' ya da 'en' olabilir: {value!r}")
+        raise typer.Exit(code=2)
+    return normalized  # type: ignore[return-value]
+
+
+def _score_step(
+    run_dir: Path,
+    analysis: JobAnalysis,
+    posting_text: str,
+    *,
+    master: Path | None,
+    lang: Language | None,
+) -> CandidatePool:
+    """Deterministik ön filtreyi çalıştırır ve `candidates.json`'ı yazar."""
+    resume = _load(master or MASTER_JSON)
+    pool = build_pool(
+        resume,
+        analysis,
+        posting_text,
+        slug=run_dir.name,
+        language=lang,
+    )
+    path = write_pool(run_dir, pool)
+    console.print(f"[green]✓[/green] {escape(str(path))}")
+    return pool
 
 
 def _analyze_step(clean_text: str, *, source_kind: str, no_llm: bool) -> JobAnalysis:
@@ -308,6 +357,111 @@ def _print_analysis(analysis: JobAnalysis) -> None:
         console.print(
             f"[bold red]ilanda bulunamadı, atıldı:[/bold red] "
             f"{escape(', '.join(analysis.keywords.dropped))}"
+        )
+
+
+@app.command()
+def score(
+    slug: Annotated[
+        str,
+        typer.Argument(help="Çalıştırma dizini: out/ altındaki ad ya da ayırt edici bir parçası."),
+    ],
+    master: Annotated[
+        Path | None,
+        typer.Option("--master", "-m", help="Süper set (varsayılan: data/master.json)."),
+    ] = None,
+    lang: Annotated[
+        str | None,
+        typer.Option("--lang", help="CV dilini zorla: tr ya da en (varsayılan: ilanın dili)."),
+    ] = None,
+) -> None:
+    """Var olan bir çalıştırma için ön filtreyi (yeniden) çalıştır.
+
+    LLM kullanmaz, ağa çıkmaz: puanlamayı gözle görmek ve ağırlıkları
+    kurcalamak için `tailor`'ı baştan çalıştırmaya gerek yok.
+    """
+    run_dir = find_run(slug)
+    if run_dir is None:
+        console.print(f"[bold red]✗[/bold red] Çalıştırma bulunamadı: {escape(slug)}")
+        console.print("[dim]out/ altındaki dizin adının bir parçasını ver.[/dim]")
+        raise typer.Exit(code=2)
+
+    job_path = run_dir / JOB_FILENAME
+    if not job_path.exists():
+        console.print(
+            f"[bold red]✗[/bold red] {escape(str(job_path))} yok — önce `tailor` çalıştır."
+        )
+        raise typer.Exit(code=2)
+
+    analysis = read_analysis(job_path)
+    clean_path = run_dir / CLEAN_FILENAME
+    posting_text = clean_path.read_text(encoding="utf-8") if clean_path.exists() else ""
+    if not posting_text:
+        console.print(
+            f"[yellow]⚠[/yellow] {CLEAN_FILENAME} yok; geri çağırma ağı bu çalıştırmada çalışmaz."
+        )
+
+    console.print(f"[dim]çalıştırma:[/dim] {escape(run_dir.name)}")
+    pool = _score_step(run_dir, analysis, posting_text, master=master, lang=_parse_lang(lang))
+    _print_pool(pool, verbose=True)
+
+
+def _print_pool(pool: CandidatePool, *, verbose: bool = False) -> None:
+    """Ön filtrenin sonucunu gözle denetlenebilir biçimde yazdırır."""
+    summary = Table(title="ön filtre", title_style="bold", show_header=False)
+    summary.add_column(style="dim")
+    summary.add_column(justify="right")
+    summary.add_row("dil", pool.language)
+    summary.add_row("zorunlu etiket", str(len(pool.must_tags)))
+    summary.add_row("tercih edilen etiket", str(len(pool.nice_tags)))
+    summary.add_row("seçilen madde", str(pool.budget.candidate_items))
+    summary.add_row("süper set", str(pool.budget.superset_items))
+    summary.add_row("kısılan metin", f"%{pool.budget.saved_ratio * 100:.0f}")
+    console.print(summary)
+
+    for entry in (*pool.experiences, *pool.projects):
+        selected = entry.selected_bullets
+        if not selected:
+            continue
+        table = Table(
+            title=f"{entry.title} — {entry.period}",
+            title_style="bold",
+            title_justify="left",
+        )
+        table.add_column("skor", justify="right", style="cyan", width=6)
+        table.add_column("madde")
+        if verbose:
+            table.add_column("eşleşen", style="dim")
+        for bullet in selected:
+            row = [f"{bullet.breakdown.total:g}", escape(bullet.text[:88])]
+            if verbose:
+                row.append(escape(", ".join(bullet.matched_must + bullet.matched_nice)))
+            table.add_row(*row)
+        console.print(table)
+
+    skills = pool.selected_skills
+    if skills:
+        console.print(
+            f"[dim]yetenekler ({len(skills)}):[/dim] "
+            f"{escape(', '.join(skill.text for skill in skills))}"
+        )
+
+    covered = sum(1 for row in pool.coverage if row.status == "covered")
+    indirect = sum(1 for row in pool.coverage if row.status == "indirect")
+    missing = [row for row in pool.coverage if row.status == "missing"]
+    console.print(
+        f"[dim]gereksinim:[/dim] {covered} kapsanıyor, {indirect} dolaylı, {len(missing)} eksik"
+    )
+
+    if pool.recall.missed:
+        console.print(
+            f"[yellow]model kaçırmış:[/yellow] {escape(', '.join(pool.recall.missed))} "
+            "[dim](geri çağırma ağı ilan metninden buldu)[/dim]"
+        )
+    if pool.missing_tags:
+        console.print(
+            f"[yellow]süper sette yok:[/yellow] {escape(', '.join(pool.missing_tags))} "
+            "[dim](gerçekten biliyorsan master.json'a ekle)[/dim]"
         )
 
 

@@ -46,6 +46,16 @@ def _out_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return target
 
 
+@pytest.fixture(autouse=True)
+def _example_master(monkeypatch: pytest.MonkeyPatch, master_example_path: Path) -> None:
+    """Ön filtre (issue 06) süper seti okuyor; testler **kişisel** dosyayı okumamalı.
+
+    `data/master.json` gitignore'da ve temiz bir checkout'ta yok — süit ona
+    yaslansaydı yalnızca bu makinede yeşil olurdu.
+    """
+    monkeypatch.setattr("cv_updater.cli.MASTER_JSON", master_example_path)
+
+
 def _fake_analysis() -> JobAnalysis:
     """Analiz adımının kanonik sahte çıktısı — LLM'e gidilmez."""
     return JobAnalysis(

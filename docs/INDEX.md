@@ -8,6 +8,7 @@
 | `MASTER_DATA.md` **(yerel)** | Süper set nasıl büyütülür; madde yazım kuralları; `validate` lint kuralları | 03 |
 | [`USAGE.md`](USAGE.md) | Günlük akış: üç girdi yolu, çıktı dizinleri, `.env`, sık hatalar | 04 |
 | [`PIPELINE.md`](PIPELINE.md) | Adım adım veri akışı; hangi adım deterministik, hangisi LLM; `job.json` şeması | 05 |
+| [`SCORING.md`](SCORING.md) | Ön filtre formülü, ağırlıkların gerekçesi, geri çağırma ağı, `candidates.json` | 06 |
 
 `MASTER_DATA.md` gitignore'dadır: süper setin durumunu (terfi tarihi, ekip büyüklüğü, tarih
 aralıkları) taşıdığı için `data/master.json` ile aynı gizlilik sınıfındadır. `CLAUDE.md` gibi
@@ -16,7 +17,7 @@ yalnızca yerelde yaşar.
 ## Mimari, kuşbakışı
 
 ```
-cli.py                 typer uygulaması: validate · tailor · check
+cli.py                 typer uygulaması: validate · tailor · score · check
 llm.py                 Anthropic istemcisi — model, endpoint ve yapılandırılmış
                        çıktı stratejisinin yaşadığı tek yer
 paths.py               data/ ve out/ konumları
@@ -24,9 +25,11 @@ lint.py                validate'in içerik lint kuralları
 tags.py                data/tags.yaml kontrollü sözlüğü
 models/resume.py       master.json şeması (Reactive Resume + x_meta)
 models/job.py          JobPosting · KeywordMapping · JobAnalysis
+models/candidates.py   CandidatePool · ScoredItem · Weights (ön filtre çıktısı)
 steps/intake.py        ilanı oku (dosya / stdin / editör), çalıştırma dizini
 steps/normalize.py     ligatür, boşluk, madde işareti, arayüz artığı
 steps/analyze_job.py   LLM analizi + halüsinasyon süzgeci + etiket eşlemesi
+steps/score.py         deterministik ön filtre + geri çağırma ağı (LLM yok)
 data/                  master.json (gitignore) · master.example.json · tags.yaml
 out/                   çalıştırma başına bir dizin (gitignore)
 ```
