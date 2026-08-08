@@ -11,6 +11,7 @@
 | [`SCORING.md`](SCORING.md) | Ön filtre formülü, ağırlıkların gerekçesi, geri çağırma ağı, `candidates.json` | 06 |
 | [`GUARDRAILS.md`](GUARDRAILS.md) | Dürüstlük guardrail'i: kural listesi, `--strict` / `--repair`, tasarım gerekçesi | 07 |
 | [`REPORT.md`](REPORT.md) | Uyum raporu bölüm bölüm; uyum skoru eşikleri, "ne zaman başvurma" | 09 |
+| [`ATS.md`](ATS.md) | ATS öz-kontrolü: yedi kontrol, ağırlıkları, ölçüm sonuçları, elenen sezgiseller | 10 |
 
 `MASTER_DATA.md` gitignore'dadır: süper setin durumunu (terfi tarihi, ekip büyüklüğü, tarih
 aralıkları) taşıdığı için `data/master.json` ile aynı gizlilik sınıfındadır. `CLAUDE.md` gibi
@@ -37,6 +38,7 @@ steps/tailor.py        LLM uyarlama adımı — havuzdan seçim + yeniden ifade
 steps/verify.py        dürüstlük guardrail'i: planı master.json'a karşı denetler
 steps/render_json.py   tailored.json derlemesi + rxresu.me şema doğrulaması
 steps/report.py        match_report.md — uyum skoru, gerekçeler, eksikler
+steps/ats_check.py     PDF'ten metni geri oku, ATS uyumunu puanla (LLM yok)
 schema/                rxresu.me şema anlık görüntüsü (--refresh-schema ile yenilenir)
 data/                  master.json (gitignore) · master.example.json · tags.yaml
 out/                   çalıştırma başına bir dizin (gitignore)

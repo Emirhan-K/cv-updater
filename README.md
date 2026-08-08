@@ -25,7 +25,10 @@ master.json ────────▶ [2] ön filtre: etiket puanlama ····
    (Reactive Resume'a import edilir)   (uyum skoru, gerekçe, eksik kelimeler)
                     │
                     ▼
-              [5] ATS öz-kontrolü ····························· deterministik  (issue 10)
+              [5] ATS öz-kontrolü ····························· deterministik
+                    │  PDF'ten metni geri oku: ligatür, anahtar kelime, iletişim,
+                    ▼  link görünürlüğü, başlık, okuma sırası, tarih
+              ats_report.md
 ```
 
 **Modelin söylediği hiçbir şey doğrulanmadan bir sonraki adıma geçmiyor.** İki LLM adımının
@@ -63,7 +66,7 @@ Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
 | `cv-updater tailor <ilan>` | Tam boru hattı: `tailored.json` + `match_report.md` üretir | evet |
 | `cv-updater score <slug>` | Sadece ön filtreyi çalıştırır, puanlamayı tabloyla gösterir | hayır |
 | `cv-updater report <slug>` | Uyum raporunu yeniden üretir | hayır |
-| `cv-updater check <pdf>` | PDF'ten metni geri çıkarıp ATS uyumunu puanlar (issue 10) | hayır |
+| `cv-updater check <pdf>` | PDF'ten metni geri çıkarıp ATS uyumunu puanlar; kritik bulguda çıkış kodu 1 | hayır |
 
 Guardrail varsayılan olarak **katı**: bir ihlal bulunursa akış durur ve `tailored.json`
 üretilmez. `--repair` ihlalli metni kaynağına döndürüp sürdürür — bir gevşetme değil,
