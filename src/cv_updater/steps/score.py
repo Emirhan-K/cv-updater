@@ -43,7 +43,7 @@ from cv_updater.models.candidates import (
 )
 from cv_updater.models.job import JobAnalysis, Language
 from cv_updater.models.resume import Resume, XBullet, XMeta
-from cv_updater.steps.analyze_job import casefold_tr, fold
+from cv_updater.steps.analyze_job import ascii_fold, casefold_tr, fold
 from cv_updater.tags import TagVocabulary, default_vocabulary
 
 CANDIDATES_FILENAME = "candidates.json"
@@ -94,8 +94,14 @@ _EN_MONTHS = {
     "december": 12,
 }
 
+#: Ay adları, ASCII'ye indirgenmiş halde. ATS tarih biçimi kontrolü (issue 10)
+#: aynı listeyi kullanıyor — iki yerde ay adı listesi tutulmasın.
+MONTH_WORDS: tuple[str, ...] = (*_TR_MONTHS, *_EN_MONTHS)
+
 #: "Devam Ediyor", "Present", "Halen" — bitmemiş dönem bugünle puanlanır.
 _ONGOING = ("devam", "present", "current", "halen", "now", "günümüz", "gunumuz")
+#: `_ONGOING`'in ASCII hali — düzenli ifadeye gömülüyor (issue 10).
+ONGOING_WORDS: tuple[str, ...] = ("devam", "present", "current", "halen", "now", "gunumuz")
 
 #: Dönem ayracı: tire, en/em dash ve "to". `2018-2022` de `Eylül 2024 – Devam` de aynı.
 _PERIOD_SPLIT = re.compile(r"\s*(?:[-–—]|\bto\b)\s*")
@@ -103,9 +109,6 @@ _YEAR = re.compile(r"(19|20)\d{2}")
 
 #: `impact` alanının "ölçülebilir" sayılması için içinde bir sayı geçmeli.
 _HAS_NUMBER = re.compile(r"\d")
-
-#: Türkçe karakterleri ay adı aramasında ASCII'ye indirir ("Eylül" → "eylul").
-_ASCII_FOLD = str.maketrans({"ı": "i", "ğ": "g", "ü": "u", "ş": "s", "ö": "o", "ç": "c"})
 
 
 # --------------------------------------------------------------------------- #
@@ -249,7 +252,7 @@ def parse_period_end(period: str, *, today: date | None = None) -> date | None:
         return None
 
     tail = parts[-1]
-    folded = casefold_tr(tail).translate(_ASCII_FOLD)
+    folded = ascii_fold(tail)
     if any(word in folded for word in _ONGOING):
         return now
 

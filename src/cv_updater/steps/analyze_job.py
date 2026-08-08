@@ -84,6 +84,22 @@ def fold(text: str) -> str:
     return f" {_SEPARATORS.sub(' ', casefold_tr(text)).strip()} "
 
 
+#: Türkçe harfleri ASCII karşılıklarına indirir ("Eylül" → "eylul").
+_ASCII_FOLD = str.maketrans({"ı": "i", "ğ": "g", "ü": "u", "ş": "s", "ö": "o", "ç": "c"})
+
+
+def ascii_fold(text: str) -> str:
+    """Küçük harfe indirir **ve** Türkçe harfleri ASCII'ye çevirir.
+
+    `fold`'un aksine Türkçe harfleri korumaz; sabit bir kelime listesiyle
+    eşleşmek gerektiğinde kullanılır — ay adları ("Eylül" → "eylul") ve bölüm
+    başlıkları ("Eğitim" → "egitim"). PDF'ten çıkan metin ayrıca hangi fontla
+    kodlandığına göre değişebiliyor, o yüzden başlık araması ASCII üzerinden
+    yapılıyor.
+    """
+    return casefold_tr(text).translate(_ASCII_FOLD)
+
+
 def find_hallucinated(posting_text: str, keywords: list[str]) -> list[str]:
     """İlan metninde geçmeyen terimler.
 

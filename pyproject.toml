@@ -15,6 +15,12 @@ dependencies = [
     "python-dotenv>=1.2.2",
 ]
 
+[project.optional-dependencies]
+# ATS öz-kontrolünün (issue 10) yedek metin çıkarıcısı. Asıl motor `pypdf`;
+# pdfplumber yalnızca pypdf boş ya da bozuk metin döndürdüğünde devreye giriyor,
+# ve pdfminer.six + pillow'u sürüklediği için varsayılan kuruluma girmiyor.
+pdf = ["pdfplumber>=0.11"]
+
 [project.scripts]
 cv-updater = "cv_updater.cli:app"
 
@@ -22,6 +28,8 @@ cv-updater = "cv_updater.cli:app"
 dev = [
     "pytest>=8.3",
     "ruff>=0.8",
+    # Yedek motorun gerçekten çalıştığı test edilebilsin.
+    "pdfplumber>=0.11",
 ]
 
 [build-system]

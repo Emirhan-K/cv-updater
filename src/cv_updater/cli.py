@@ -34,6 +34,14 @@ from cv_updater.steps.analyze_job import (
     read_analysis,
     write_analysis,
 )
+from cv_updater.steps.ats_check import (
+    ATS_REPORT_FILENAME,
+    RISKY_SCORE,
+    AtsReport,
+    NoTextLayerError,
+    build_markdown,
+    check_pdf,
+)
 from cv_updater.steps.intake import (
     CLEAN_FILENAME,
     IntakeError,
@@ -766,15 +774,151 @@ def report(
 
 @app.command()
 def check(
-    pdf: Annotated[
-        Path | None, typer.Argument(help="ATS kontrolü yapılacak PDF (issue 10).")
+    pdf: Annotated[Path, typer.Argument(help="ATS kontrolü yapılacak PDF.")],
+    job: Annotated[
+        Path | None,
+        typer.Option("--job", help="İlan analizi (job.json) — anahtar kelime kapsaması için."),
     ] = None,
+    slug: Annotated[
+        str | None,
+        typer.Option(
+            "--slug", help="Çalıştırma dizini; job.json oradan alınır, rapor oraya yazılır."
+        ),
+    ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out", help=f"Raporun yazılacağı dosya (varsayılan: {ATS_REPORT_FILENAME})."
+        ),
+    ] = None,
+    strict: Annotated[
+        bool,
+        typer.Option("--strict", help="Uyarıları da hata say (çıkış kodu)."),
+    ] = False,
 ) -> None:
-    """Üretilen PDF'ten metni geri çıkarıp ATS uyumunu puanla."""
-    console.print("[yellow]check henüz uygulanmadı (issue 10).[/yellow]")
-    if pdf is not None:
-        console.print(f"PDF: {pdf}")
-    raise typer.Exit(code=1)
+    """Üretilen PDF'ten metni geri çıkarıp ATS uyumunu puanla.
+
+    LLM kullanmaz, ağa çıkmaz. `--job` ya da `--slug` verilirse anahtar kelime
+    kapsaması ilana özgü ölçülür; verilmezse genel kontroller çalışır.
+
+    Kritik bir bulguda çıkış kodu 1 olur — kontrol pre-commit ya da CI'ya
+    bağlanabilsin diye.
+    """
+    run_dir, analysis = _check_context(job, slug)
+
+    try:
+        report = check_pdf(pdf, analysis)
+    except FileNotFoundError:
+        console.print(f"[bold red]✗[/bold red] PDF yok: {escape(str(pdf))}")
+        raise typer.Exit(code=2) from None
+    except NoTextLayerError as exc:
+        console.print(f"[bold red]✗ Metin katmanı okunamadı.[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=1) from exc
+
+    _print_ats(report)
+
+    target = out or (
+        run_dir / ATS_REPORT_FILENAME if run_dir else _ats_run_dir(pdf) / ATS_REPORT_FILENAME
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(build_markdown(report), encoding="utf-8", newline="")
+    console.print(f"[green]✓[/green] {escape(str(target))}")
+
+    if not report.ok(strict=strict):
+        raise typer.Exit(code=1)
+
+
+def _check_context(job: Path | None, slug: str | None) -> tuple[Path | None, JobAnalysis | None]:
+    """`--job` / `--slug`'dan ilan analizini ve rapor dizinini çözer."""
+    run_dir: Path | None = None
+
+    if slug is not None:
+        run_dir = find_run(slug)
+        if run_dir is None:
+            console.print(f"[bold red]✗[/bold red] Çalıştırma bulunamadı: {escape(slug)}")
+            raise typer.Exit(code=2)
+        if job is None:
+            job = run_dir / JOB_FILENAME
+
+    if job is None:
+        console.print(
+            "[dim]İlan verilmedi; anahtar kelime kapsaması atlanacak "
+            "(--job ya da --slug ile ilana özgü ölçülür).[/dim]"
+        )
+        return run_dir, None
+
+    if not job.exists():
+        console.print(f"[bold red]✗[/bold red] İlan analizi yok: {escape(str(job))}")
+        raise typer.Exit(code=2)
+
+    if run_dir is None:
+        run_dir = job.parent
+    return run_dir, read_analysis(job)
+
+
+def _ats_run_dir(pdf: Path) -> Path:
+    """İlansız çalıştırmada raporun gideceği yer: `out/ats-<pdf>-<damga>/`.
+
+    Rapor kullanıcının PDF'inin yanına değil, aracın kendi çıktı dizinine
+    yazılıyor — `out/` zaten gitignore'da ve boru hattının geri kalanıyla
+    tutarlı.
+    """
+    return new_run_dir(f"ats-{slugify(pdf.stem) or 'pdf'}")
+
+
+_ATS_LEVEL_STYLE: dict[str, str] = {
+    "critical": "bold red",
+    "warning": "yellow",
+    "info": "dim cyan",
+}
+_ATS_LEVEL_LABEL: dict[str, str] = {
+    "critical": "KRİTİK",
+    "warning": "UYARI",
+    "info": "bilgi",
+}
+
+
+def _print_ats(report: AtsReport) -> None:
+    """Puan tablosunu ve bulguları terminale basar."""
+    table = Table(title=f"ATS öz-kontrolü — {report.pdf.name}", title_style="bold")
+    table.add_column("kontrol")
+    table.add_column("sonuç", style="dim")
+    table.add_column("puan", justify="right")
+    for check_result in report.checks:
+        if check_result.skipped:
+            table.add_row(check_result.label, escape(check_result.detail), "—")
+            continue
+        table.add_row(
+            check_result.label,
+            escape(check_result.detail),
+            f"{check_result.points:.0f}/{check_result.weight:.0f}",
+        )
+    console.print(table)
+
+    engine = f"metin motoru: {report.engine}"
+    if report.fallback_reason:
+        engine += f" [dim](pypdf yetmedi: {escape(report.fallback_reason)})[/dim]"
+    console.print(f"[dim]{engine}[/dim]")
+
+    for finding in report.findings:
+        style = _ATS_LEVEL_STYLE[finding.level]
+        console.print(
+            f"[{style}]{_ATS_LEVEL_LABEL[finding.level]}[/{style}] "
+            f"[dim]{escape(finding.rule)}[/dim] {escape(finding.message)}"
+        )
+        if finding.evidence:
+            console.print(f"    [dim]{escape(', '.join(finding.evidence))}[/dim]")
+        if finding.fix_hint:
+            console.print(f"    [dim]→ {escape(finding.fix_hint)}[/dim]")
+
+    style = "bold green"
+    if report.critical:
+        style = "bold red"
+    elif report.score < RISKY_SCORE:
+        style = "yellow"
+    console.print(
+        f"\n[{style}]Puan: {report.score}/100[/{style}] · [bold]{escape(report.verdict)}[/bold]"
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
