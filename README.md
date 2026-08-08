@@ -25,10 +25,13 @@ master.json ────────▶ [2] ön filtre: etiket puanlama ····
    (Reactive Resume'a import edilir)   (uyum skoru, gerekçe, eksik kelimeler)
                     │
                     ▼
-              [5] ATS öz-kontrolü ····························· deterministik
+              [5] render: RenderCV → Typst → PDF ············· deterministik  (opsiyonel)
+                    │
+                    ▼
+              [6] ATS ÖZ-KONTROLÜ ···························· deterministik
                     │  PDF'ten metni geri oku: ligatür, anahtar kelime, iletişim,
                     ▼  link görünürlüğü, başlık, okuma sırası, tarih
-              ats_report.md
+              cv.pdf + ats_report.md
 ```
 
 **Modelin söylediği hiçbir şey doğrulanmadan bir sonraki adıma geçmiyor.** İki LLM adımının
@@ -42,7 +45,12 @@ Python 3.12 + [uv](https://docs.astral.sh/uv/) gerekir.
 git clone https://github.com/Emirhan-K/cv-updater
 cd cv-updater
 uv sync
+uv sync --extra render --extra pdf   # opsiyonel: PDF üretimi ve yedek metin çıkarıcı
 ```
+
+İki opsiyonel ek var: `render` (RenderCV + Typst — `cv-updater render` için) ve `pdf`
+(pdfplumber — ATS kontrolünün yedek metin çıkarıcısı). İkisi de olmadan boru hattının
+tamamı çalışır.
 
 LLM adımları için `.env.example`'ı `.env` olarak kopyala. İki seçenek var: yerel bir gateway
 (`LLM_BASE_URL` + `LLM_API_KEY`) ya da doğrudan Anthropic (`ANTHROPIC_API_KEY`). `--help` ve
@@ -50,9 +58,9 @@ LLM adımları için `.env.example`'ı `.env` olarak kopyala. İki seçenek var:
 
 ## Durum
 
-**Faz 0–2 tamam (issue 01–09): araç uçtan uca çalışıyor.** İlandan başlayıp Reactive
-Resume'a import edilebilen `tailored.json` ve `match_report.md`'ye kadar. 470 test yeşil,
-hiçbiri ağa çıkmıyor. Sırada ATS öz-kontrolü (issue 10).
+**Faz 0–3 tamam (issue 01–12): araç ilandan PDF'e kadar uçtan uca çalışıyor.** İlan analizi,
+ön filtre, guardrail'li uyarlama, `tailored.json` + `match_report.md`, tek komutla PDF ve
+üretilen PDF'in ATS öz-kontrolü. Testler ağa çıkmıyor.
 
 Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
 [`docs/PIPELINE.md`](docs/PIPELINE.md), guardrail'in nasıl çalıştığı
@@ -66,6 +74,7 @@ Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
 | `cv-updater tailor <ilan>` | Tam boru hattı: `tailored.json` + `match_report.md` üretir | evet |
 | `cv-updater score <slug>` | Sadece ön filtreyi çalıştırır, puanlamayı tabloyla gösterir | hayır |
 | `cv-updater report <slug>` | Uyum raporunu yeniden üretir | hayır |
+| `cv-updater render <slug>` | `tailored.json` → PDF (RenderCV/Typst) + otomatik ATS kontrolü | hayır |
 | `cv-updater check <pdf>` | PDF'ten metni geri çıkarıp ATS uyumunu puanlar; kritik bulguda çıkış kodu 1 | hayır |
 
 Guardrail varsayılan olarak **katı**: bir ihlal bulunursa akış durur ve `tailored.json`
