@@ -50,7 +50,7 @@ maddenin **hiçbir zaman seçilememesi** — `validate` bunu `bullets.untagged` 
 | `domain` | 1.0 | Alan uyumu ("fintech", "savunma") bir tercih edilen etiket kadar değerli: aynı sektörde çalışmış olmak bir kütüphaneyi bilmekle aynı ağırlıkta. |
 | `seniority` | 0.5 | Kıdem CV'nin tamamının özelliği, tek maddenin değil; sıralamayı ancak eşitlik bozacak kadar etkilemeli. |
 | `recency` | 1.0 (azalarak) | Devam eden iş tam puan, iki yıl önce bitmiş iş sıfır. Amaç: etiket olarak uyan **eski** bir deneyimin güncel bir deneyimin önüne geçmemesi. |
-| `impact` | 0.5 | Sayı taşıyan madde her zaman daha iyi okunur, ama ölçülemeyen iş ölçülemez olduğu için değersiz değil. **`x_meta.impact` serbest metin kalıyor**; "ölçülebilir" sayılması için içinde bir rakam geçmesi yeterli. Yapılandırmak (sayı + birim) tartışıldı ve ertelendi: şu an 58 maddede alan zaten boş, migrasyonun getirisi yok. |
+| `impact` | 0.5 | Sayı taşıyan madde her zaman daha iyi okunur, ama ölçülemeyen iş ölçülemez olduğu için değersiz değil. **`x_meta.impact` serbest metin kalıyor**; "ölçülebilir" sayılması için içinde bir rakam geçmesi yeterli. Yapılandırmak (sayı + birim) tartışıldı ve ertelendi (2026-08-07): alan o gün 58 maddede boştu ve migrasyonun getirisi yoktu. 8 Ağustos'ta alan **her maddede** dolduruldu, ama çoğu nitel ("sıfır LLM çağrısı") — bonus yine yalnızca rakam taşıyanlara gidiyor, dolayısıyla ağırlığın anlamı değişmedi. |
 
 ### `must` / `nice` ayrımı eleme yapmaz
 

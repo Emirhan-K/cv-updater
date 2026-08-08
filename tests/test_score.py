@@ -24,10 +24,12 @@ from cv_updater.steps.score import (
     build_pool,
     find_run,
     parse_period_end,
+    parse_period_start,
     posting_tags,
     read_pool,
     recall_check,
     recency_bonus,
+    reverse_chronological_key,
     seniority_fit,
     write_pool,
 )
@@ -170,6 +172,55 @@ class TestPeriodParsing:
 
     def test_empty_period_is_none(self) -> None:
         assert parse_period_end("", today=TODAY) is None
+
+
+class TestPeriodStart:
+    """Başlangıç tarihi yalnızca sıralamada eşitlik bozmak için ayrıştırılıyor."""
+
+    def test_turkish_month_and_year(self) -> None:
+        assert parse_period_start("Şubat 2026 – Mayıs 2026") == date(2026, 2, 1)
+
+    def test_english_month_and_year(self) -> None:
+        assert parse_period_start("January 2025 - Present") == date(2025, 1, 1)
+
+    def test_a_bare_year_starts_the_year(self) -> None:
+        """Bitiş aralığın sonuna düşüyordu; başlangıç başına düşmeli."""
+        assert parse_period_start("2018-2022") == date(2018, 1, 1)
+
+    def test_unparseable_period_is_none(self) -> None:
+        assert parse_period_start("bir ara") is None
+
+    def test_empty_period_is_none(self) -> None:
+        assert parse_period_start("") is None
+
+
+class TestReverseChronologicalKey:
+    def test_the_newest_period_sorts_first(self) -> None:
+        periods = [
+            "Ocak 2024 – Temmuz 2024",
+            "Aralık 2025 – Devam Ediyor",
+            "Eylül 2024 – Ocak 2026",
+        ]
+
+        ordered = sorted(
+            periods, key=lambda p: reverse_chronological_key(p, today=TODAY), reverse=True
+        )
+
+        assert ordered == [
+            "Aralık 2025 – Devam Ediyor",
+            "Eylül 2024 – Ocak 2026",
+            "Ocak 2024 – Temmuz 2024",
+        ]
+
+    def test_two_ongoing_periods_break_the_tie_on_the_start(self) -> None:
+        older = reverse_chronological_key("Ocak 2024 – Devam Ediyor", today=TODAY)
+        newer = reverse_chronological_key("Mayıs 2026 – Devam Ediyor", today=TODAY)
+
+        assert newer > older
+
+    def test_an_unreadable_period_sinks_to_the_bottom(self) -> None:
+        """Tarih uydurulmuyor — okunamayan dönem `date.min`e düşüyor."""
+        assert reverse_chronological_key("bir ara", today=TODAY) == (date.min, date.min)
 
 
 class TestRecencyBonus:

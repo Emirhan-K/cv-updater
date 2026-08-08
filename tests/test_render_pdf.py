@@ -318,6 +318,60 @@ def test_theme_and_font_land_in_design() -> None:
     assert build_document(_resume())["design"]["typography"]["font_family"]["body"] == DEFAULT_FONT
 
 
+def test_text_is_justified_without_hyphenation() -> None:
+    """Regresyon: iki yana yaslama kelimeleri bölüp tireyi metin katmanına sokuyordu.
+
+    Ölçüm (2026-08-08, `pypdf`): `architec-tures`, `multispec-tral`,
+    `concur-rency` … sekiz kırık kelime. ATS `architecture` arayınca eşleşme yok.
+    """
+    typography = build_document(_resume())["design"]["typography"]
+
+    assert typography["alignment"] == "justified-with-no-hyphenation"
+
+
+def test_experiences_are_reverse_chronological() -> None:
+    """Sıra dosyadan değil tarihten geliyor — en güncel iş en üstte."""
+    resume = _resume()
+    resume.sections.experience.items = [
+        ExperienceItem(id="e-old", company="Aisoft", period="Ocak 2024 – Temmuz 2024"),
+        ExperienceItem(id="e-now", company="Preunec", period="Aralık 2025 – Devam Ediyor"),
+        ExperienceItem(id="e-mid", company="VidInsight", period="Eylül 2024 – Ocak 2026"),
+    ]
+
+    document = build_document(resume)
+    companies = [entry["company"] for entry in document["cv"]["sections"]["Deneyim"]]
+
+    assert companies == ["Preunec", "VidInsight", "Aisoft"]
+
+
+def test_two_ongoing_experiences_break_the_tie_on_the_start_date() -> None:
+    resume = _resume()
+    resume.sections.experience.items = [
+        ExperienceItem(id="e-older", company="Eski", period="Ocak 2024 – Devam Ediyor"),
+        ExperienceItem(id="e-newer", company="Yeni", period="Mayıs 2026 – Devam Ediyor"),
+    ]
+
+    document = build_document(resume)
+
+    assert [e["company"] for e in document["cv"]["sections"]["Deneyim"]] == ["Yeni", "Eski"]
+
+
+def test_unreadable_period_sinks_to_the_bottom() -> None:
+    """Tarih uydurulmuyor: okunamayan bir dönem en alta iner, ortaya karışmaz."""
+    resume = _resume()
+    resume.sections.experience.items = [
+        ExperienceItem(id="e-vague", company="Belirsiz", period="bir ara"),
+        ExperienceItem(id="e-dated", company="Tarihli", period="Ocak 2020 – Mart 2021"),
+    ]
+
+    document = build_document(resume)
+
+    assert [e["company"] for e in document["cv"]["sections"]["Deneyim"]] == [
+        "Tarihli",
+        "Belirsiz",
+    ]
+
+
 def test_the_cv_is_monochrome() -> None:
     """Regresyon: `classic` teması beş yeri birden maviye boyuyordu.
 

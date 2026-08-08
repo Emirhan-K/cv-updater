@@ -422,6 +422,7 @@ def check_language_coverage(resume: Resume) -> Iterator[Finding]:
 def _i18n_owners(resume: Resume) -> Iterator[tuple[str, object]]:
     """`x_i18n` taşıyabilen her nesne, raporlanabilir yoluyla."""
     yield "basics", resume.basics
+    yield "summary", resume.summary
     for section_name in Sections.model_fields:
         for item in getattr(resume.sections, section_name).items:
             yield f"{section_name}/{item.id}", item

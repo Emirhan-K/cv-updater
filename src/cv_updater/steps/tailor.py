@@ -68,6 +68,12 @@ Kurallar:
    düşünüp güçlü bir projeyi de atma — sayfa düzeni senin sorunun değil.
    Deneyim bölümü zayıfsa (staj ağırlıklı, kısa geçmiş) projeler o boşluğu
    doldurur, orada cömert ol. En güçlü proje başta olacak şekilde sırala.
+9. **Kaynak maddenin açılış fiilini koru.** Süper setteki fiiller bilerek
+   çeşitlendirildi; "Drew up"ı "Designed"a, "Stood up"ı "Built"e çevirmek
+   bilgi kaybı değil ama CV'yi tekdüze yapıyor. Fiili ancak ilan gerçekten
+   başka bir kelime istiyorsa değiştir — ve o zaman bile aynı CV'de iki madde
+   aynı fiille açılmasın. Aynı şey klişe kalıplar için de geçerli:
+   "uçtan uca" / "end-to-end" bir maddede varsa ikincisine ekleme.
 """
 
 USER_TEMPLATE = """\

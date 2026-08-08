@@ -236,7 +236,12 @@ class TestCompilation:
         assert markup.startswith("<ul><li>Görüntü işleme")
         assert "Dokümantasyonu" not in markup
 
-    def test_experiences_follow_the_plan_order(self, rendered: Resume) -> None:
+    def test_experiences_are_reverse_chronological(self, rendered: Resume) -> None:
+        """Sıra plandan değil `period`'dan geliyor — en güncel iş en üstte.
+
+        Dış bir denetleyicinin "HR Red Flags" bulgusuydu: süper setin yazım
+        sırası olduğu gibi basılıyordu.
+        """
         assert rendered.sections.experience.items[0].company == "Örnek AI"
 
     def test_an_experience_missing_from_the_plan_is_hidden_not_deleted(
@@ -244,6 +249,21 @@ class TestCompilation:
     ) -> None:
         old = next(i for i in rendered.sections.experience.items if i.company == "Eski Yazılım")
         assert old.hidden is True
+
+    def test_the_plan_order_does_not_survive_an_out_of_order_plan(
+        self, resume: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Model eski deneyimi başa koysa bile sayfada en güncel iş üstte."""
+        plan.experiences = [
+            TailoredExperience(source_id="exp-eski", bullets=[]),
+            TailoredExperience(source_id="exp-ai", bullets=[]),
+        ]
+        doc = render(resume, plan, pool, run_id=RUN)
+
+        assert [item.company for item in doc.sections.experience.items] == [
+            "Örnek AI",
+            "Eski Yazılım",
+        ]
 
     def test_skills_follow_the_plan_order(self, rendered: Resume) -> None:
         names = [item.name for item in rendered.sections.skills.items if not item.hidden]
@@ -683,6 +703,58 @@ class TestFieldTranslations:
         doc = render(translated, plan, pool, language="en", run_id=RUN)
 
         assert doc.sections.experience.items[0].period == "Since 2026"
+
+
+class TestSummaryTranslation:
+    """Özetin yedeği de tek örnekli bir alan — `x_i18n` ile çevriliyor.
+
+    Uyarlanmış CV'nin özetini normalde model yazıyor ve ilanın dilinde yazıyor.
+    Süper setteki metin yalnızca plan bir özet üretemediğinde sayfaya düşüyor,
+    ama tek dilde olduğu için İngilizce çalıştırmada içerik İngilizce, tepesindeki
+    paragraf Türkçe kalıyordu.
+    """
+
+    @pytest.fixture
+    def bilingual(self, resume: Resume) -> Resume:
+        resume.summary.x_i18n = {"en": {"content": "<p>The superset summary.</p>"}}
+        return resume
+
+    def test_the_fallback_summary_is_translated(
+        self, bilingual: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        plan.summary = ""
+
+        doc = render(bilingual, plan, pool, language="en", run_id=RUN)
+
+        assert doc.summary.content == "<p>The superset summary.</p>"
+
+    def test_the_turkish_run_keeps_the_turkish_fallback(
+        self, bilingual: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        plan.summary = ""
+
+        doc = render(bilingual, plan, pool, language="tr", run_id=RUN)
+
+        assert doc.summary.content == "<p>Süper setteki özet.</p>"
+
+    def test_the_translation_never_overwrites_the_tailored_summary(
+        self, bilingual: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Çeviri yedeği çeviriyor, üretilen özeti değil.
+
+        Sıra tersine dönerse İngilizce çalıştırmalar uyarlanmış özetini sessizce
+        kaybeder ve süper setin genel metnine düşer.
+        """
+        doc = render(bilingual, plan, pool, language="en", run_id=RUN)
+
+        assert doc.summary.content == "<p>Görüntü işleme üzerine çalışan bir mühendis.</p>"
+
+    def test_the_translation_does_not_leak_into_the_output(
+        self, bilingual: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(bilingual, plan, pool, language="en", run_id=RUN)
+
+        assert "x_i18n" not in to_json(doc)
 
 
 class TestContactIcons:

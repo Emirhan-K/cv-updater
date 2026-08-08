@@ -322,6 +322,14 @@ class Summary(BaseModel):
     keepTogether: bool = False
     startOnNewPage: bool = False
     content: str = Field(default="", description="HTML string.")
+    #: Özetin başka dildeki hali. Şema tek bir `summary` tutuyor, o yüzden EN
+    #: varyantı maddeler gibi `x_meta.lang` ile yan yana yaşayamıyor.
+    #:
+    #: Normalde uyarlanmış CV'nin özetini model yazar (`TailorPlan.summary`,
+    #: ilanın dilinde) ve buradaki metin yalnızca **yedek**: plan bir özet
+    #: üretemezse sayfaya bu düşüyor. Yedeğin tek dilde olması İngilizce bir
+    #: çalıştırmada içeriği İngilizce, özeti Türkçe bir CV'ye yol açıyordu.
+    x_i18n: I18n = Field(default_factory=dict, description="Dil kodu → alan adı → çeviri.")
 
 
 class LayoutPage(BaseModel):

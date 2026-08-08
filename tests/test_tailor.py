@@ -225,6 +225,24 @@ class TestTailor:
         assert "EKLEME" in system
         assert "YANLIŞ:" in system  # örneklerle anlatılıyor
 
+    def test_the_system_prompt_asks_for_the_source_verb(
+        self, analysis: JobAnalysis, pool: CandidatePool, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Ölçüm: model çeşitlendirilmiş fiilleri "Designed"/"Built"e geri çeviriyordu.
+
+        Süper setteki fiil çeşitliliği elle yapıldı; yeniden ifade onu geri
+        aynılaştırırsa yapılan iş boşa gidiyor. Kural yeniden ifadenin altında
+        (guardrail kelime seçimini değil yeni bilgiyi kovalıyor).
+        """
+        monkeypatch.setenv("LLM_STRUCTURED_MODE", "tool")
+        client = _FakeClient()
+
+        tailor(analysis, pool, client=client)
+
+        system = client.messages.calls[0]["system"]
+        assert "açılış fiilini koru" in system
+        assert "uçtan uca" in system
+
     def test_the_raw_posting_text_is_not_resent(
         self, analysis: JobAnalysis, pool: CandidatePool, monkeypatch: pytest.MonkeyPatch
     ) -> None:

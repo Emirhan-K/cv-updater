@@ -137,3 +137,7 @@ Entry point: [`docs/INDEX.md`](docs/INDEX.md). Roadmap and issue list:
 
 `data/master.json` contains personal data — phone, email, address — and is in `.gitignore`. Only
 the anonymized `data/master.example.json` is committed.
+
+## Licence
+
+[Apache-2.0](LICENSE).

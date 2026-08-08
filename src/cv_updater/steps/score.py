@@ -242,8 +242,59 @@ def posting_tags(
 
 
 # --------------------------------------------------------------------------- #
-# Dönem ayrıştırma (tazelik bonusu için)
+# Dönem ayrıştırma (tazelik bonusu ve ters-kronolojik sıralama için)
 # --------------------------------------------------------------------------- #
+
+
+def parse_period_start(period: str) -> date | None:
+    """Bir `period` metninin başlangıç tarihi. Anlaşılmazsa None.
+
+    `parse_period_end`'in aynadaki hali; tek farkı ayı olmayan bir tarihte
+    aralığın **başına** düşmesi ("2018-2022" → 2018-01-01). Yalnızca sıralamada
+    eşitlik bozmak için kullanılıyor, puanlamada değil.
+    """
+    if not period.strip():
+        return None
+
+    parts = [part for part in _PERIOD_SPLIT.split(period.strip()) if part.strip()]
+    if not parts:
+        return None
+
+    head = parts[0]
+    folded = ascii_fold(head)
+    year_match = _YEAR.search(head)
+    if year_match is None:
+        return None
+    year = int(year_match.group())
+
+    month = 1
+    for name, number in (*_TR_MONTHS.items(), *_EN_MONTHS.items()):
+        if name in folded or folded.startswith(name[:3]):
+            month = number
+            break
+
+    try:
+        return date(year, month, 1)
+    except ValueError:  # pragma: no cover - year/month zaten sınırlar içinde
+        return None
+
+
+def reverse_chronological_key(period: str, *, today: date | None = None) -> tuple[date, date]:
+    """Ters-kronolojik sıralama anahtarı: `(bitiş, başlangıç)`.
+
+    `sorted(..., reverse=True)` ile kullanılır; en güncel deneyim en üste çıkar.
+    Bitiş eşitse (iki devam eden iş) daha yeni başlayan öne geçer. Okunamayan bir
+    dönem `date.min`e düşer, yani listenin sonuna — **tarih uydurulmuyor**, sadece
+    sıralanamayan bir dönem en alta iniyor.
+
+    Ayrı bir fonksiyon olmasının sebebi iki tüketicisinin olması: derleme
+    (`render_json._render_experiences`) ve render (`render_pdf.build_document`).
+    Sıra ikisinde de aynı kuralla oluşmalı.
+    """
+    return (
+        parse_period_end(period, today=today) or date.min,
+        parse_period_start(period) or date.min,
+    )
 
 
 def parse_period_end(period: str, *, today: date | None = None) -> date | None:

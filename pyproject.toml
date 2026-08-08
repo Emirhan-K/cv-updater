@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "İş ilanına göre CV uyarlayan CLI aracı — dürüstlük guardrail'i ile."
 readme = "README.md"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "typer>=0.15",
     "pydantic>=2.9",

@@ -50,7 +50,12 @@
     "hidden": false,
     "keepTogether": false,
     "startOnNewPage": false,
-    "content": "<p>Örnek özet. Gerçek özet <code>data/master.json</code> içinde yaşar; bu dosya yalnızca şemayı ve <code>x_meta</code> sözleşmesini gösterir.</p>"
+    "content": "<p>Örnek özet. Gerçek özet <code>data/master.json</code> içinde yaşar; bu dosya yalnızca şemayı ve <code>x_meta</code> sözleşmesini gösterir.</p>",
+    "x_i18n": {
+      "en": {
+        "content": "<p>Example summary. The real one lives in <code>data/master.json</code>; this file only shows the schema and the <code>x_meta</code> contract.</p>"
+      }
+    }
   },
   "sections": {
     "profiles": {

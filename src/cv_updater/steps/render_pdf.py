@@ -49,7 +49,12 @@ from cv_updater.lint import strip_html
 from cv_updater.models.job import Language
 from cv_updater.models.resume import ExperienceItem, Resume, Role
 from cv_updater.steps.analyze_job import ascii_fold
-from cv_updater.steps.score import MONTH_WORDS, ONGOING_WORDS, parse_period_end
+from cv_updater.steps.score import (
+    MONTH_WORDS,
+    ONGOING_WORDS,
+    parse_period_end,
+    reverse_chronological_key,
+)
 
 YAML_FILENAME = "cv.yaml"
 PDF_FILENAME = "cv.pdf"
@@ -105,6 +110,20 @@ SHOW_CONNECTION_ICONS = False
 #: `0535 950 46 23` olarak basılıyor ve ülke kodu kayboluyor. Uluslararası
 #: ilanlara başvuruluyor, o yüzden `+90 535 …` (`international`).
 PHONE_NUMBER_FORMAT = "international"
+
+#: Metin hizası. `classic` temasının varsayılanı `justified` ve Typst iki yana
+#: yaslarken **kelime bölüyor** — tire PDF'in metin katmanına giriyor, süse
+#: değil. Ölçüldü (2026-08-08, `pypdf`, `out/novatek-en-final-…/cv.pdf`): sekiz
+#: kırık kelime (`architec-tures`, `multispec-tral`, `concur-rency`,
+#: `record-ings`, `archi-tecture`, `fine-tuning`, `text-based`,
+#: `architec-ture`). ATS `architecture` aradığında `architec-ture` eşleşmiyor —
+#: ligatür dersinin aynısı, başka bir kaynaktan.
+#:
+#: `justified-with-no-hyphenation` yaslamayı koruyor, bölmeyi bırakıyor.
+#: Geçerli değerler: `rendercv/schema/models/design/classic_theme.py`
+#: (`Typography.alignment`) — alan `design.typography` altında yaşıyor,
+#: `design.text` diye bir blok yok.
+TEXT_ALIGNMENT = "justified-with-no-hyphenation"
 
 #: Profil ağı → FontAwesome ikon **adı**. RenderCV bunu Typst tarafında
 #: `#connection-with-icon("linkedin")` olarak çözüyor; `"fa brands fa-linkedin"`
@@ -253,6 +272,21 @@ def _role_sort_key(role: Role) -> tuple[int, date]:
 
 def _visible(items: list) -> list:
     return [item for item in items if not item.hidden]
+
+
+def experiences_in_order(resume: Resume) -> list[ExperienceItem]:
+    """Görünür deneyimler, **ters-kronolojik**.
+
+    `render_json` sırayı zaten burada bırakıyor; bu ikinci sıralama elle yazılmış
+    ya da eski bir `tailored.json` için ağ. Kural iki yerde de aynı olsun diye
+    anahtar ortak (`score.reverse_chronological_key`) — sıra dosyadan dosyaya
+    değişmemeli, sayfada en güncel iş her zaman en üstte.
+    """
+    return sorted(
+        _visible(resume.sections.experience.items),
+        key=lambda item: reverse_chronological_key(item.period),
+        reverse=True,
+    )
 
 
 def experience_entries(item: ExperienceItem) -> list[dict[str, Any]]:
@@ -425,7 +459,7 @@ def build_document(
         sections[titles["summary"]] = summary
 
     experience: list[dict[str, Any]] = []
-    for item in _visible(resume.sections.experience.items):
+    for item in experiences_in_order(resume):
         experience.extend(experience_entries(item))
     if experience:
         sections[titles["experience"]] = experience
@@ -455,13 +489,14 @@ def build_document(
             "theme": theme,
             "colors": dict(COLORS),
             "typography": {
+                "alignment": TEXT_ALIGNMENT,
                 "font_family": {
                     "body": font,
                     "name": font,
                     "headline": font,
                     "connections": font,
                     "section_titles": font,
-                }
+                },
             },
             # `connections` temanın **header**'ı altında yaşıyor, `design`in
             # doğrudan altında değil; oraya yazılırsa RenderCV "bu alan bu nesne

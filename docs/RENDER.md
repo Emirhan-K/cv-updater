@@ -117,6 +117,38 @@ ikonun görünüp görünmemesi ayrı bir karar. Ayrıca `connections` temanın 
 değil **`header`ı** altında yaşıyor; yanlış yere yazılırsa RenderCV girdiyi "bu alan bu nesne
 için bilinmiyor" diyerek reddediyor.
 
+### Metin yaslanıyor ama kelime bölünmüyor
+
+`design.typography.alignment = "justified-with-no-hyphenation"`.
+
+`classic` temasının varsayılanı düz `justified` ve Typst iki yana yaslarken **kelime bölüyor**.
+Tire süs değil: PDF'in metin katmanına giriyor. Ölçüldü (2026-08-08, `pypdf`, gerçek bir
+çalıştırmanın çıktısı) — sekiz kırık kelime:
+
+```
+architec-tures   multispec-tral   concur-rency   record-ings
+archi-tecture    fine-tuning      text-based     architec-ture
+```
+
+ATS `architecture` aradığında `architec-ture` eşleşmiyor. Ligatür dersinin aynısı, başka bir
+kaynaktan: **sayfada doğru görünen şey metin katmanında doğru olmayabilir.** Geçerli değerler
+`rendercv/schema/models/design/classic_theme.py` (`Typography.alignment`); ayar `design.typography`
+altında yaşıyor, `design.text` diye bir blok **yok**.
+
+### Deneyimler ters-kronolojik
+
+Sıra plandan gelmiyor, `period`'dan geliyor: `score.reverse_chronological_key` → `(bitiş, başlangıç)`,
+`reverse=True`. En güncel iş en üstte; iki devam eden iş varsa daha yeni başlayan öne geçiyor;
+okunamayan bir dönem `date.min`e düşüp listenin sonuna gidiyor — **tarih uydurulmuyor**.
+
+Deneyimlerin sırası bir uyarlama kararı değil, bir konvansiyon: her İK taraması ve çoğu ATS en
+güncel işi en üstte bekler. Dış bir denetleyici bunu "HR Red Flags" olarak raporladı; sebep
+`master.json`'ın yazım sırasının olduğu gibi basılmasıydı.
+
+Sıralama **iki yerde** yapılıyor ve ikisi de aynı anahtarı kullanıyor: `render_json._render_experiences`
+(derleme) ve `render_pdf.experiences_in_order` (render). İkincisi elle yazılmış ya da eski bir
+`tailored.json` için ağ.
+
 ### Roller düzleştirilmiyor
 
 RenderCV'de iç içe rol yok. Bir deneyimde `roles[]` doluysa **rol başına bir girdi** üretiliyor

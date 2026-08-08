@@ -33,7 +33,7 @@ from cv_updater.models.job import Language
 from cv_updater.models.resume import ExperienceItem, Item, Resume, Role, Sections
 from cv_updater.models.tailor import SelectedBullet, TailorPlan
 from cv_updater.periods import translate_period
-from cv_updater.steps.score import parse_period_end
+from cv_updater.steps.score import parse_period_end, reverse_chronological_key
 
 TAILORED_FILENAME = "tailored.json"
 
@@ -172,6 +172,12 @@ def render(
     target = language or pool.language
     stamp = run_id or pool.slug or "cv-updater"
 
+    # Özetin çevirisi **plan yazılmadan önce** uygulanıyor. `x_i18n` yedeği
+    # çeviriyor, üretilen özeti değil: model özeti zaten hedef dilde yazıyor
+    # (`steps/tailor`), sonradan çevirmek onu süper setteki genel metinle
+    # ezerdi. Sıra tersine dönerse İngilizce çalıştırmalar uyarlanmış özetini
+    # sessizce kaybeder.
+    _translate_fields(doc.summary, target)
     doc.summary.content = paragraph(plan.summary) or doc.summary.content
     doc.summary.hidden = False
 
@@ -312,10 +318,26 @@ def _role_sort_key(role: Role) -> tuple[int, date]:
     return (1, end) if end is not None else (0, date.min)
 
 
+def _experience_sort_key(item: ExperienceItem) -> tuple[date, date]:
+    """Deneyimleri ters-kronolojik sıralar — `score.reverse_chronological_key`."""
+    return reverse_chronological_key(item.period)
+
+
 def _render_experiences(doc: Resume, plan: TailorPlan, stamp: str) -> None:
-    """Deneyimleri plandaki sırayla derler; unvan ve tarihe dokunmaz."""
+    """Deneyimleri **ters-kronolojik** sırada derler; unvan ve tarihe dokunmaz.
+
+    Sıra plandan gelmiyor. Model maddeleri seçer ve yeniden ifade eder, ama
+    deneyimlerin sırası bir uyarlama kararı değil, bir konvansiyon: her İK
+    taraması ve çoğu ATS en güncel işi en üstte bekler. Dış bir denetleyicinin
+    "HR Red Flags" bulgusu tam olarak buydu (TODO.md, 8 Ağustos) — `master.json`
+    yazım sırası olduğu gibi basılıyordu ve Freelance, Aisoft, Kodlab sırasıyla
+    çıkıyordu.
+
+    Tarih guardrail'in dokunulmaz alanı, dolayısıyla sıralama da öyle:
+    deterministik, `period` üzerinden, modele sorulmadan.
+    """
     chosen = {entry.source_id: entry for entry in plan.experiences}
-    ordered: list = []
+    visible: list = []
 
     for entry in plan.experiences:
         item = next((i for i in doc.sections.experience.items if i.id == entry.source_id), None)
@@ -323,13 +345,19 @@ def _render_experiences(doc: Resume, plan: TailorPlan, stamp: str) -> None:
             continue
         _attach_bullets(item, entry.bullets)
         item.hidden = False
-        ordered.append(item)
+        visible.append(item)
+
+    visible.sort(key=_experience_sort_key, reverse=True)
+    ordered: list = visible
 
     # Planda geçmeyen deneyim silinmez, gizlenir: sonradan elle açılabilsin.
-    for item in doc.sections.experience.items:
-        if item.id not in chosen:
-            item.hidden = True
-            ordered.append(item)
+    # Gizli olanlar da kendi içinde sıralanıyor — biri elle açılırsa doğru yere
+    # düşsün diye değil (açan kişi taşır), okunabilir bir dosya kalsın diye.
+    hidden = [item for item in doc.sections.experience.items if item.id not in chosen]
+    hidden.sort(key=_experience_sort_key, reverse=True)
+    for item in hidden:
+        item.hidden = True
+        ordered.append(item)
 
     for item in ordered:
         for role in item.roles:

@@ -133,7 +133,8 @@ role düşer) ama `validate` bunu `bullets.unknown_role` ile hata olarak raporla
 
 ### `x_i18n` — tek örnekli alanların çevirisi
 
-Her bölüm öğesinde, her rolde ve `basics`'te opsiyonel. Yapı: **dil kodu → alan adı → değer.**
+Her bölüm öğesinde, her rolde, `basics`'te ve `summary`'de opsiyonel.
+Yapı: **dil kodu → alan adı → değer.**
 
 ```json
 "x_i18n": {
@@ -141,9 +142,15 @@ Her bölüm öğesinde, her rolde ve `basics`'te opsiyonel. Yapı: **dil kodu �
 }
 ```
 
-Maddeler ve özet iki dilde yaşıyor (`x_meta.lang` ile ayrı varyantlar), ama **unvan, derece,
+Maddeler iki dilde yaşıyor (`x_meta.lang` ile ayrı varyantlar), ama **unvan, derece,
 dil seviyesi, headline** gibi alanlar öyle yaşayamıyor: bir deneyimin bir `position`'ı var.
 İlk İngilizce CV'de maddeler İngilizceydi, üstlerindeki "Stajyer Yazılım Mühendisi" Türkçe.
+
+**`summary` de bu listede.** Şema tek bir `summary.content` tutuyor. Uyarlanmış CV'nin özetini
+normalde model yazar (ilanın dilinde), süper setteki metin yalnızca plan bir özet üretemediğinde
+sayfaya düşen **yedek** — ve o yedek tek dilde olduğu için İngilizce çalıştırmada içeriği
+İngilizce, tepesi Türkçe bir CV çıkabiliyordu. Çeviri **plan yazılmadan önce** uygulanıyor;
+sıra tersine dönerse üretilen özet süper setin genel metniyle ezilir.
 
 | Kural | Neden |
 |---|---|
