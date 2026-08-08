@@ -86,9 +86,14 @@ Puanlama sıralamayı verir, seçimi bu kurallar verir:
   belirtilmemiş madde her iki dile de uyar. `--lang en` ilanın dilini ezer (issue 08).
 - **`always_include: true`** — puanı ne olursa olsun havuza girer (eğitim, çekirdek yetenekler).
 - **Gizli öğe** (`hidden: true`) hiç okunmaz.
-- **Üst sınırlar:** deneyim başına 8 madde, proje başına 4 madde, en fazla 5 proje, 30 yetenek.
+- **Üst sınırlar:** deneyim başına 8 madde, proje başına 4 madde, 30 yetenek.
 - **Alt sınır:** hiç eşleşmeyen bir deneyimden bile en az 2 madde kalır. İstihdam boşluğu,
   konu dışı bir maddeden daha kötü okunur.
+- **Proje sayısında sınır yok** (`MAX_PROJECTS = None`). Eskiden beşti; kaldırıldı çünkü
+  doğru sayı ilana göre değişiyor — iki güçlü projesi olan bir ilanda üçüncüsü sayfayı
+  doldurur, proje ağırlıklı bir ilanda beşi de yerinde durur. Ön filtre projeleri skora
+  göre **sıralayıp** hepsini modele gösteriyor; kaçının CV'ye gireceğine model karar
+  veriyor (`steps/tailor.SYSTEM_PROMPT`, kural 8). Sıralama öneri, bağlayıcı değil.
 - **Eşitlik bozma:** eşit skorda `id`'ye göre sıralanır. Sözlük sırası platformdan platforma
   değişebileceği için sıralama asla ona bırakılmıyor.
 

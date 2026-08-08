@@ -64,7 +64,14 @@ out/<slug>-<YYYYAAGG>-<SSDDss>/
   candidates.json    ön filtrenin puanladığı aday havuzu (LLM yok)
   plan.json          modelin seçimi + yeniden ifadeleri
   violations.json    guardrail denetimi — temiz çalıştırmada da yazılır
-  tailored.json      ★ Reactive Resume'a import edilecek CV
+  tailored.json      ★ uyarlanmış CV — render'ın girdisi
+  match_report.md    uyum raporu: skor, gerekçeler, eksikler
+
+# `render` çalıştırıldıktan sonra aynı dizine eklenenler:
+  cv.yaml            RenderCV girdisi (ara adım)
+  <Ad>_CV.typ        Typst kaynağı (ara adım — tipografiyi elle kurcalamak istersen)
+  cv.pdf             ★ gönderilecek dosya
+  ats_report.md      ATS öz-kontrolü
 ```
 
 **Önceki çıktı asla ezilmez.** Aynı ilanı iki kez çalıştırmak iki dizin üretir; bu kasıtlı,
@@ -105,7 +112,53 @@ Yine de devam edilsin mi? [y/N]:
 Eşik **temizlenmiş** metin üzerinden ölçülür — 20 satır "Kaydet"/"Paylaş" eşiği şişirmez.
 Soruyu atlamak için `--yes`.
 
-## `tailored.json`'ı Reactive Resume'a aktarmak
+## PDF üretmek — `render`
+
+Asıl akış bu. `tailor` bittikten sonra tek komut:
+
+```bash
+uv run cv-updater render <slug>              # ilanın dilinde
+uv run cv-updater render <slug> --lang en    # İngilizce başlıklar ve tarihler
+```
+
+`tailored.json` → RenderCV YAML → Typst → `cv.pdf`, ve arkasından **ATS öz-kontrolü otomatik
+çalışır** (atlamak için `--no-check`). Ekranda yedi kontrollük bir tablo ve 100 üzerinden puan
+görürsün; ayrıntı [`ATS.md`](ATS.md), render kararları [`RENDER.md`](RENDER.md).
+
+```bash
+uv run cv-updater render <slug> --font "EB Garamond"   # 17 gömülü fonttan biri
+uv run cv-updater render <slug> --theme engineeringresumes
+uv run cv-updater render <slug> --out ~/Desktop/cv.pdf
+```
+
+Bilmen gerekenler:
+
+- **CV tek renk.** `classic` teması ad, headline, iletişim satırı, bölüm başlıkları ve
+  linkleri maviye boyuyordu; beşi de siyaha çevrildi (`render_pdf.COLORS`).
+- **İletişim ikonları kapalı**, telefon `+90 …` biçiminde.
+- **Terfi taşıyan deneyimler düzleşir**: RenderCV'de iç içe rol yok, rol başına bir girdi
+  üretilir ve şirket adı tekrar eder. Maddeler `x_bullets[].role` ile kendi rollerine gider.
+- **Tarihler yeniden biçimlenir.** RenderCV `period`'u ayrıştırıp kendi yereline göre yazar
+  ("Sept 2024 – present") ve süre rozeti ekler ("2 years"). `2020-2025` gibi yalın yıl
+  aralıkları "Jan 2020 – Jan 2025" olarak çıkıyor — bilinen bir pürüz.
+- **İki sayfaya taşarsa uyarır** ve neyin kırpılabileceğini söyler; akış durmaz. Kırpmak
+  istersen `tailored.json`'da ilgili öğeye `"hidden": true` yazıp tekrar `render` çalıştır.
+
+Render **opsiyonel bir bağımlılık**: `uv sync --extra render` kurulu değilse ne yapılacağını
+söyleyen bir hata alırsın.
+
+### Elde PDF varsa: yalnızca ATS kontrolü
+
+```bash
+uv run cv-updater check cv.pdf
+uv run cv-updater check cv.pdf --job out/<slug>/job.json   # anahtar kelime kapsaması da ölçülsün
+```
+
+## Alternatif: `tailored.json`'ı Reactive Resume'a aktarmak
+
+`render` çıktısını beğenmezsen ya da CV'yi web arayüzünde elle düzenlemek istersen v1 akışı
+duruyor. Bu yolun görünümü `render`'ınkinden **belirgin biçimde farklı** (şablon, font, bölüm
+sırası, kenar çubuğu) — sebepleri [`RENDER.md`](RENDER.md)'de.
 
 1. [rxresu.me](https://rxresu.me) hesabına gir.
 2. Dashboard'da **Create a new resume** yanındaki menüden **Import** → **JSON**.
@@ -126,10 +179,13 @@ Soruyu atlamak için `--yes`.
   ("fine-tuning" → `fne-tuning`) sorun doğamaz. Times New Roman metrik eşi olduğu için
   ATS tarafında da en konvansiyonel seçim. Beğenmezsen `--font Inter` ya da `--font Arimo`
   (ikisi de ölçüldü, ligatürsüz); başka bir font verirsen uyarı basılır.
-- **Terfi taşıyan deneyimlerde maddeler en güncel rolün altına yazılır.** Reactive Resume
-  bir deneyimde `roles[]` doluysa öğe seviyesindeki açıklamayı render etmiyor.
+- **Terfi taşıyan deneyimlerde maddeler kendi rollerinin altına yazılır** (`x_bullets[].role`),
+  atanmamışlar en güncel role düşer. Reactive Resume bir deneyimde `roles[]` doluysa öğe
+  seviyesindeki açıklamayı render etmiyor — ama unvanı **ediyor**, o yüzden roller varsa öğe
+  seviyesindeki unvan boşaltılır (yoksa aynı unvan iki kez görünür).
 - Dil `--lang` ile zorlanmadıysa ilanın dilinden gelir; `metadata.page.locale` ona göre
-  `tr-TR` ya da `en-US` olur.
+  `tr-TR` ya da `en-US` olur. Bölüm başlıkları, tarihler ve unvanlar da o dile çevrilir —
+  ilk ikisi otomatik, unvanlar `master.json`'daki `x_i18n` tablosundan.
 
 ## Guardrail durdurursa
 
@@ -200,7 +256,31 @@ Gateway kullanıyorsan **Docker Desktop açık olmalı**; kapalıysa `Connection
 | `Guardrail durdurdu` | Model uydurmuş. `violations.json`'a bak, `--repair` ile sürdür. |
 | `Editör bulunamadı` | `CV_UPDATER_EDITOR` ya da `EDITOR` ayarla. |
 
-## Sonraki adım
+## Başvuru günlüğü — `log`
 
-`tailored.json`'a kadar olan her şey çalışıyor. Kalanlar: uyum raporu (issue 09),
-ATS öz-kontrolü (10), RenderCV ile otomatik PDF (11). Plan [`ROADMAP.md`](ROADMAP.md)'de.
+`tailor` her çalıştırmada `applications/` altına bir kayıt açar (kapatmak için `--no-log`).
+Gönderdikten sonra durumunu takip et:
+
+```bash
+uv run cv-updater log list                    # hepsi
+uv run cv-updater log list --status sent      # yalnızca gönderilenler
+uv run cv-updater log list --since 2w         # son iki hafta
+uv run cv-updater log status <id> applied --note "referans: Ünal"
+uv run cv-updater log stats                   # dönüş oranları
+```
+
+`log stats` **20-30 başvurudan önce anlamlı değil** — o kadar veri birikince
+[`SCORING.md`](SCORING.md)'deki uyum eşiklerini gerçek dönüş oranına göre ayarlayabilirsin.
+Ayrıntı [`APPLICATIONS.md`](APPLICATIONS.md).
+
+## Tam bir tur, baştan sona
+
+```bash
+Get-Clipboard | uv run cv-updater tailor - --slug acme-ai --lang en   # 1. uyarla
+uv run cv-updater render acme-ai --lang en                            # 2. PDF + ATS
+start out/acme-ai-*/cv.pdf                                            # 3. bak
+uv run cv-updater log status acme-ai sent --note "LinkedIn üzerinden" # 4. kaydet
+```
+
+Uyum raporunu (`match_report.md`) göndermeden önce oku: hangi gereksinimin **dolaylı**
+karşılandığını yazıyor, mülakat hazırlığının yarısı orada.

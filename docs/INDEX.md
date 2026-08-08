@@ -4,7 +4,7 @@
 |---|---|---|
 | [`../README.md`](../README.md) | Proje ne yapar, kurulum, komutlar, örnek akış | 01 |
 | [`ROADMAP.md`](ROADMAP.md) | Teknik kararlar, 13 issue'luk plan ve faz dağılımı | 01 |
-| [`SCHEMA.md`](SCHEMA.md) | `master.json` alan alan; `x_meta` sözleşmesi; Reactive Resume'dan farklar | 02 |
+| [`SCHEMA.md`](SCHEMA.md) | `master.json` alan alan; `x_meta` / `x_bullets` / `x_i18n` sözleşmesi; Reactive Resume'dan farklar | 02 |
 | `MASTER_DATA.md` **(yerel)** | Süper set nasıl büyütülür; madde yazım kuralları; `validate` lint kuralları | 03 |
 | [`USAGE.md`](USAGE.md) | Günlük akış: üç girdi yolu, çıktı dizinleri, `.env`, sık hatalar | 04 |
 | [`PIPELINE.md`](PIPELINE.md) | Adım adım veri akışı; hangi adım deterministik, hangisi LLM; `job.json` şeması | 05 |
@@ -28,7 +28,8 @@ llm.py                 Anthropic istemcisi — model, endpoint ve yapılandırı
 paths.py               data/ ve out/ konumları
 lint.py                validate'in içerik lint kuralları
 tags.py                data/tags.yaml kontrollü sözlüğü
-models/resume.py       master.json şeması (Reactive Resume + x_meta)
+periods.py             dönem metinlerinin dil çevirisi (sözlük tabanlı, LLM yok)
+models/resume.py       master.json şeması (Reactive Resume + x_meta/x_bullets/x_i18n)
 models/job.py          JobPosting · KeywordMapping · JobAnalysis
 models/candidates.py   CandidatePool · ScoredItem · Weights (ön filtre çıktısı)
 models/tailor.py       TailorPlan · SelectedBullet (uyarlamanın çıktı sözleşmesi)

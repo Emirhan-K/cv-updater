@@ -250,8 +250,28 @@ tamamını kapsıyor. Varsayılan **Tinos** — Times New Roman metrik eşi, en 
 fontu, ve süper setin serif tercihini koruyor. `--font` ile değiştirilir; ölçülmemiş bir
 font verilirse uyarı basılır.
 
-Tinos yalnızca 400/700 ağırlığı taşıdığı için süper setin 500/600'ü en yakın gerçek
-ağırlığa indiriliyor (`nearest_weight`) — yoksa Reactive Resume fontu bulamayıp geri düşer.
+Tinos yalnızca 400/700 ağırlığı taşıyor ve süper set 500/600 istiyor. `fontWeights`
+"metin bu ağırlıkta yazılsın" değil **"bu yüzler gömülsün"** demek, o yüzden kısıtlı bir
+fontta taşıdığı ağırlıkların **tamamı** yükleniyor. İlk sürüm her ağırlığı en yakınına
+indirgiyordu ve liste `["400"]`e çöküyordu: kalın yüz PDF'e hiç girmiyor, şablonun kalın
+bastığı şirket ve proje adları sessizce normale düşüyordu. 8 Ağustos'ta üretilen PDF'te
+ölçüldü — `Tinos-Bold` yalnızca ad ve bölüm başlıklarında geçiyordu.
+
+### Dil: başlıklar, tarihler ve unvanlar
+
+Süper set tek dilde yazılıyor; madde ve özet iki dilde yaşıyor (`x_meta.lang`) ama **tek
+örnekli alanlar** yaşayamıyor. İlk İngilizce CV'de sonuç şuydu: içerik İngilizce, bölüm
+başlıkları ("Özet", "Deneyim"), bütün tarihler ve bütün unvanlar Türkçe. Üç ayrı mekanizma
+kapatıyor, üçü de **deterministik — modele sorulmuyor**:
+
+| Ne | Nasıl |
+|---|---|
+| Bölüm başlıkları | `render_json.SECTION_TITLES` sabit tablosu |
+| Tarihler | `cv_updater.periods.translate_period` — ay adı sözlüğü; tanınmayan dönem olduğu gibi kalır |
+| Unvan, derece, dil seviyesi, proje adı | Süper sette elle yazılan `x_i18n` çevirileri ([`SCHEMA.md`](SCHEMA.md)) |
+
+Boş bir alan çevrilmiyor: boşluk derlemenin bir kararı olabilir (rol taşıyan deneyimde
+öğe seviyesindeki unvan bilerek siliniyor) ve çeviri onu geri yazarsa tekrar geri gelir.
 
 Çıktı, depodaki rxresu.me şema anlık görüntüsüne karşı doğrulanır; hata varsa çıkış kodu 1.
 Anlık görüntü `cv-updater validate --refresh-schema` ile yenilenir (**ağa çıkan tek yardımcı

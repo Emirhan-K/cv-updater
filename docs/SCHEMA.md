@@ -117,6 +117,43 @@ UUID olmak zorunda değil — insan okuyabilir olması, `match_report.md`'yi oku
 **Aynı deneyim birden fazla madde varyantı taşır** (biri CV-pipeline odaklı, biri backend
 odaklı); uyarlama ilana göre birini seçer. Süper setin anlamı bu.
 
+#### `role` — madde hangi unvana ait?
+
+Terfi taşıyan bir deneyimde (`roles[]`) her madde kendi rolünün altına yazılır:
+
+```json
+{ "id": "exp-preunec.agri-ml.tr", "text": "…", "role": "exp-preunec.role.engineer" }
+```
+
+Boş bırakılabilir — o zaman madde **en güncel role** düşer, ki rol taşımayan deneyimlerin
+tamamı için doğru davranış. Alan, ikinci gerçek PDF'in bulgusu üzerine eklendi: bütün
+maddeler en güncel role yığıldığı için terfi öncesi unvan sayfada *başlığı olup gövdesi
+olmayan* bir satır olarak duruyordu. Var olmayan bir role atıf maddeyi kaybettirmez (güncel
+role düşer) ama `validate` bunu `bullets.unknown_role` ile hata olarak raporlar.
+
+### `x_i18n` — tek örnekli alanların çevirisi
+
+Her bölüm öğesinde, her rolde ve `basics`'te opsiyonel. Yapı: **dil kodu → alan adı → değer.**
+
+```json
+"x_i18n": {
+  "en": { "position": "Software Engineering Intern" }
+}
+```
+
+Maddeler ve özet iki dilde yaşıyor (`x_meta.lang` ile ayrı varyantlar), ama **unvan, derece,
+dil seviyesi, headline** gibi alanlar öyle yaşayamıyor: bir deneyimin bir `position`'ı var.
+İlk İngilizce CV'de maddeler İngilizceydi, üstlerindeki "Stajyer Yazılım Mühendisi" Türkçe.
+
+| Kural | Neden |
+|---|---|
+| Yalnızca **modelde var olan metin alanları** yazılır | Yazım hatası (`possition`) yeni bir alan uydurmasın. `validate` bunu `content.unknown_i18n_field` ile yakalar — yoksa sessizce hiçbir şey olmuyordu. |
+| **Boş alan çevrilmez** | Boşluk derlemenin bir kararı olabilir: rol taşıyan deneyimde öğe seviyesindeki unvan bilerek siliniyor. Çeviri onu geri yazsaydı unvan tekrarı geri gelirdi. |
+| Modele **hiç gösterilmez** | Unvan guardrail'in dokunulmaz tuttuğu alanlardan (`models/tailor.py`). Burada tutulan şey çeviri, veri değil. |
+
+Tarihler bu tabloya girmez: onlar `cv_updater.periods` ile sözlükten çevriliyor. Yine de
+`x_i18n`'e `period` yazılırsa **o kazanır** — sözlük genel kural, elle yazılan çeviri istisna.
+
 ## Değişmezler
 
 - `data/master.json` **kişisel veri** tutar → `.gitignore`'da. Depoya yalnızca anonim

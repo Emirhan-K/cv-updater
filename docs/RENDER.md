@@ -89,14 +89,47 @@ tam adres (`github.com/Emirhan-K`) sayfaya yazılıyor ve `url` de gömülü lin
 > İlk render'da tam olarak bu oldu. Doğrusu `"github"`. Kanonik liste RenderCV'nin
 > `renderer/templater/connections.py` dosyasındaki `fontawesome_icons` sözlüğü.
 
+### CV tek renk
+
+`classic` teması **beş** yeri birden maviye (`rgb(0, 79, 144)`) boyuyor: ad, headline, iletişim
+satırı, bölüm başlıkları ve linkler. Ölçüm (2026-08-08, `pdfplumber` `non_stroking_color`):
+üretilen PDF'te bu bloklar `(0.0, 0.31, 0.565)`, geri kalan her şey siyahtı.
+
+Hepsi siyaha çevrildi (`render_pdf.COLORS`). Gerekçe: CV baskıda ve ATS önizlemesinde tek renk
+okunuyor, ve bölüm ayrımını taşıyan şey renk değil — punto ve boşluk. Doğrulama, PDF'te kalan
+renk kümesine bakarak yapılıyor (`test_the_cv_is_monochrome` girdi tarafını tutuyor).
+
+Dışarıda bırakılan iki gri: üstteki "Last updated in …" notu (`top_note`) ve alt bilgideki sayfa
+numarası (`footer`). İkisi de içeriğin parçası değil, sayfa donanımı; istenirse
+`design.page.show_top_note` / `show_footer` ile tamamen kaldırılabilir.
+
+### İkonlar kapalı, telefon uluslararası
+
+`design.header.connections` altında iki ayar değiştiriliyor:
+
+| Ayar | Değer | Neden |
+|---|---|---|
+| `show_icons` | `false` | E-postanın yanındaki zarf, telefonun yanındaki ahize ve konum iğnesi PDF'in **metin katmanına** özel kullanım alanından birer glif olarak düşüyor — `pypdf` üretilen PDF'ten `U+F0E0`, `U+F095`, `U+F3C5` çıkarıyor. ATS için gürültü, sayfa için süs. Kapalıyken adres ve numara düz metin olarak duruyor. |
+| `phone_number_format` | `international` | Varsayılan `national`, Türkiye yerelinde numarayı `0535 950 46 23` basıyor ve ülke kodunu düşürüyor. Uluslararası ilanlara başvuruluyor: `+90 535 …`. |
+
+`fontawesome_icon` alanı yine de her bağlantıya yazılıyor — RenderCV onu **zorunlu** tutuyor,
+ikonun görünüp görünmemesi ayrı bir karar. Ayrıca `connections` temanın `design`i altında
+değil **`header`ı** altında yaşıyor; yanlış yere yazılırsa RenderCV girdiyi "bu alan bu nesne
+için bilinmiyor" diyerek reddediyor.
+
 ### Roller düzleştirilmiyor
 
 RenderCV'de iç içe rol yok. Bir deneyimde `roles[]` doluysa **rol başına bir girdi** üretiliyor
 (şirket adı tekrar eder), en güncel rol üstte. Terfi çizgisi (`Yazılım Mühendisi` → `AI Ekip
 Lideri`) CV'de değerli bir sinyal; `master.json` onu ayrı tuttuğu için burada da ayrı duruyor.
 
-Maddeler `render_json._attach_bullets` tarafından en güncel role yazılıyor, o yüzden rolün kendi
-`description`'ı önce denenir, yoksa öğe seviyesine düşülür.
+Maddeler `render_json._attach_bullets` tarafından **kendi rollerine** yazılıyor (`x_bullets[].role`,
+bkz. [`SCHEMA.md`](SCHEMA.md)); atanmamış olanlar en güncel role düşer. Rolün kendi `description`'ı
+önce denenir, yoksa öğe seviyesine düşülür.
+
+Öğe seviyesindeki `position` rol taşıyan deneyimlerde **boş** geliyor: Reactive Resume onu rol
+satırlarıyla birlikte bastığı için Preunec'te "AI Team Lead" arka arkaya iki kez görünüyordu.
+RenderCV tarafında `role.position or item.position` sırası bu yüzden önemli — roller unvanı taşır.
 
 ### Yetenekler: tek girdi tipi kuralı
 
