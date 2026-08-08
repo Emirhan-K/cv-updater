@@ -6,8 +6,10 @@ import pytest
 
 from cv_updater.lint import (
     LIGATURES,
+    check_bullet_roles,
     check_education_degree,
     check_email,
+    check_i18n_fields,
     check_ids,
     check_language_coverage,
     check_ligatures,
@@ -26,6 +28,7 @@ from cv_updater.models.resume import (
     EducationItem,
     ExperienceItem,
     Resume,
+    Role,
     SkillItem,
     XBullet,
     XMeta,
@@ -340,6 +343,87 @@ def test_report_counts_and_ok_flag(master_example_raw: str) -> None:
     # Örnek dosya kasıtlı olarak küçük: 2 deneyim < 3, yani uyarı bekliyoruz.
     assert not report.ok
     assert "superset.experiences" in rules(report.warnings)
+
+
+# --- x_i18n çevirileri ------------------------------------------------------ #
+
+
+def test_a_mistyped_i18n_field_is_an_error() -> None:
+    """Yanlış yazılmış alan adı sessizce hiçbir şey yapmıyordu — sese çevrildi."""
+    resume = Resume()
+    resume.basics.x_i18n = {"en": {"headlien": "Software Engineer"}}
+
+    assert "content.unknown_i18n_field" in rules(check_i18n_fields(resume))
+
+
+def test_a_correct_i18n_field_passes() -> None:
+    resume = Resume()
+    resume.basics.x_i18n = {"en": {"headline": "Software Engineer"}}
+
+    assert list(check_i18n_fields(resume)) == []
+
+
+def test_a_non_text_i18n_field_is_an_error() -> None:
+    resume = Resume()
+    resume.sections.experience.items = [
+        ExperienceItem(id="x", company="Örnek", x_i18n={"en": {"hidden": "yes"}})
+    ]
+
+    assert "content.unknown_i18n_field" in rules(check_i18n_fields(resume))
+
+
+def test_a_role_level_i18n_field_is_checked_too() -> None:
+    resume = Resume()
+    resume.sections.experience.items = [
+        ExperienceItem(
+            id="x",
+            company="Örnek",
+            roles=[Role(id="r1", position="Kıdemli", x_i18n={"en": {"positon": "Senior"}})],
+        )
+    ]
+
+    assert "content.unknown_i18n_field" in rules(check_i18n_fields(resume))
+
+
+# --- madde → rol eşleştirmesi ----------------------------------------------- #
+
+
+def test_a_bullet_pointing_at_a_missing_role_is_an_error() -> None:
+    resume = Resume()
+    resume.sections.experience.items = [
+        ExperienceItem(
+            id="x",
+            company="Örnek",
+            roles=[Role(id="r1", position="Kıdemli")],
+            x_bullets=[XBullet(id="x.tr", text="a", role="r-yok")],
+        )
+    ]
+
+    assert "bullets.unknown_role" in rules(check_bullet_roles(resume))
+
+
+def test_a_bullet_pointing_at_a_real_role_passes() -> None:
+    resume = Resume()
+    resume.sections.experience.items = [
+        ExperienceItem(
+            id="x",
+            company="Örnek",
+            roles=[Role(id="r1", position="Kıdemli")],
+            x_bullets=[XBullet(id="x.tr", text="a", role="r1")],
+        )
+    ]
+
+    assert list(check_bullet_roles(resume)) == []
+
+
+def test_an_unassigned_bullet_is_not_flagged() -> None:
+    """`role` boş bırakmak geçerli — rolsüz deneyimlerin tamamı böyle."""
+    resume = Resume()
+    resume.sections.experience.items = [
+        ExperienceItem(id="x", company="Örnek", x_bullets=[XBullet(id="x.tr", text="a")])
+    ]
+
+    assert list(check_bullet_roles(resume)) == []
 
 
 def test_report_ok_requires_zero_errors_and_zero_warnings() -> None:

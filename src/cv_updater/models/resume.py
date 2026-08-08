@@ -65,6 +65,12 @@ class XBullet(BaseModel):
 
     id: str = Field(description="Kararlı, insan tarafından yazılan id. UUID olmak zorunda değil.")
     text: str = Field(min_length=1)
+    role: str = Field(
+        default="",
+        description="Maddenin ait olduğu rolün id'si (`ExperienceItem.roles[].id`). "
+        "Boş bırakılırsa madde en güncel role yazılır — terfi taşımayan "
+        "deneyimlerde alan zaten anlamsız.",
+    )
     x_meta: XMeta | None = None
 
 
@@ -90,6 +96,22 @@ class CustomField(BaseModel):
     link: str = ""
 
 
+#: Dile göre değişen alanların çevirisi: dil kodu → alan adı → değer.
+#:
+#: Maddeler ve özet iki dilde yaşıyor (`x_meta.lang` ile ayrı varyantlar), ama
+#: **unvan, ünvan derecesi ve dil seviyesi gibi tek örnekli alanlar** öyle
+#: yaşayamıyor: bir deneyimin bir `position`'ı var. İlk İngilizce CV'de sonuç
+#: buydu — maddeler İngilizce, üstlerindeki "Stajyer Yazılım Mühendisi" Türkçe.
+#:
+#: Burada tutulan şey **çeviri, veri değil**: aynı olgunun başka dildeki
+#: yazımı. Bu yüzden `x_meta`ya değil ayrı bir alana konuyor ve modele hiç
+#: gösterilmiyor — LLM'in unvan alanına dokunmaması kuralı (`models/tailor.py`)
+#: aynen geçerli. Çeviriyi süper seti yazan kişi yapar.
+#:
+#: Örnek: `{"en": {"position": "Software Engineer (AI & Computer Vision)"}}`
+I18n = dict[str, dict[str, str]]
+
+
 class Item(BaseModel):
     """Her bölüm öğesinin taşıdığı ortak alanlar."""
 
@@ -98,6 +120,7 @@ class Item(BaseModel):
     id: str
     hidden: bool = False
     x_meta: XMeta | None = None
+    x_i18n: I18n = Field(default_factory=dict, description="Dil kodu → alan adı → çeviri.")
 
 
 # --------------------------------------------------------------------------- #
@@ -115,6 +138,7 @@ class Role(BaseModel):
     period: str = ""
     description: str = ""
     x_meta: XMeta | None = None
+    x_i18n: I18n = Field(default_factory=dict, description="Dil kodu → alan adı → çeviri.")
 
 
 class ExperienceItem(Item):
@@ -285,6 +309,7 @@ class Basics(BaseModel):
     location: str = ""
     website: Website = Field(default_factory=Website)
     customFields: list[CustomField] = Field(default_factory=list)
+    x_i18n: I18n = Field(default_factory=dict, description="Dil kodu → alan adı → çeviri.")
 
 
 class Summary(BaseModel):

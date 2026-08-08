@@ -318,6 +318,20 @@ def test_theme_and_font_land_in_design() -> None:
     assert build_document(_resume())["design"]["typography"]["font_family"]["body"] == DEFAULT_FONT
 
 
+def test_the_cv_is_monochrome() -> None:
+    """Regresyon: `classic` teması beş yeri birden maviye boyuyordu.
+
+    Ad, headline, iletişim satırı, bölüm başlıkları ve linkler varsayılan olarak
+    `rgb(0, 79, 144)`. Ölçüldü: üretilen PDF'te bu blokların rengi
+    `(0.0, 0.31, 0.565)` çıkıyordu. CV baskıda ve ATS önizlemesinde tek renk
+    okunmalı — bölüm ayrımını punto ve boşluk taşıyor, renk değil.
+    """
+    colors = build_document(_resume())["design"]["colors"]
+
+    assert set(colors) == {"name", "headline", "connections", "section_titles", "links"}
+    assert set(colors.values()) == {"rgb(0, 0, 0)"}
+
+
 def test_phone_becomes_a_tel_uri() -> None:
     assert build_document(_resume())["cv"]["phone"] == "tel:+90-535-950-4623"
 

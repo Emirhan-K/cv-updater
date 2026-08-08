@@ -60,6 +60,24 @@ DEFAULT_THEME = "classic"
 #: Türkçe karakterlerin tamamını kapsıyor.
 DEFAULT_FONT = "Source Sans 3"
 
+#: CV tek renk. RenderCV'nin `classic` teması **beş** yeri birden maviye
+#: (`rgb(0, 79, 144)`) boyuyor: ad, headline, iletişim satırı, bölüm başlıkları
+#: ve linkler. Ölçüldü (2026-08-08, `pdfplumber` `non_stroking_color`): üretilen
+#: PDF'te bu beş blok `(0.0, 0.31, 0.565)`, geri kalan her şey siyah.
+#:
+#: Siyaha çevrildi çünkü CV baskıda ve ATS önizlemesinde tek renk okunuyor;
+#: renk, bölüm ayrımını taşıyan şey değil — punto ve boşluk taşıyor. Alt
+#: bilgideki gri sayfa numarası (`footer`) ve üstteki tarih notu (`top_note`)
+#: bilerek dışarıda: ikisi de içeriğin parçası değil, sayfa donanımı.
+BLACK = "rgb(0, 0, 0)"
+COLORS: dict[str, str] = {
+    "name": BLACK,
+    "headline": BLACK,
+    "connections": BLACK,
+    "section_titles": BLACK,
+    "links": BLACK,
+}
+
 #: Bölüm başlıkları ATS'in aradığı standart adlar olmalı (`docs/ATS.md`).
 #: RenderCV bölüm başlığını sözlük anahtarından alıyor, yani başlık metni
 #: doğrudan burada belirleniyor.
@@ -75,6 +93,18 @@ SECTION_TITLES: dict[str, dict[Language, str]] = {
 
 #: RenderCV'nin `locale.language` değerleri.
 LOCALES: dict[Language, str] = {"tr": "turkish", "en": "english"}
+
+#: İletişim satırında ikon gösterilsin mi? Hayır: e-postanın yanındaki zarf,
+#: telefonun yanındaki ahize ve konum iğnesi PDF'in metin katmanına özel
+#: kullanım alanından birer glif olarak düşüyor (ölçüm: `pypdf` üretilen
+#: PDF'ten `U+F0E0`, `U+F095`, `U+F3C5` çıkarıyor). ATS için gürültü, sayfa
+#: için süs. Kapalıyken adres ve numara düz metin olarak duruyor.
+SHOW_CONNECTION_ICONS = False
+
+#: Telefon biçimi. RenderCV varsayılanı `national` — Türkiye yerelinde numara
+#: `0535 950 46 23` olarak basılıyor ve ülke kodu kayboluyor. Uluslararası
+#: ilanlara başvuruluyor, o yüzden `+90 535 …` (`international`).
+PHONE_NUMBER_FORMAT = "international"
 
 #: Profil ağı → FontAwesome ikon **adı**. RenderCV bunu Typst tarafında
 #: `#connection-with-icon("linkedin")` olarak çözüyor; `"fa brands fa-linkedin"`
@@ -335,6 +365,11 @@ def connections(resume: Resume) -> list[dict[str, Any]]:
     kontrolünü düşüren bulgu tam olarak buydu: metin katmanında URL yok, sadece
     ikon ve kullanıcı adı vardı. `placeholder` görünen metni belirlediği için
     tam adres sayfaya yazılıyor.
+
+    `fontawesome_icon` **zorunlu alan** — RenderCV onsuz girdiyi reddediyor —
+    o yüzden doğru ikon adı yazılmaya devam ediyor. İkonların görünüp
+    görünmeyeceği ayrı bir karar ve `design.header.connections.show_icons`
+    ile veriliyor (`SHOW_CONNECTION_ICONS`).
     """
     found = []
     for item in _visible(resume.sections.profiles.items):
@@ -418,6 +453,7 @@ def build_document(
         },
         "design": {
             "theme": theme,
+            "colors": dict(COLORS),
             "typography": {
                 "font_family": {
                     "body": font,
@@ -425,6 +461,15 @@ def build_document(
                     "headline": font,
                     "connections": font,
                     "section_titles": font,
+                }
+            },
+            # `connections` temanın **header**'ı altında yaşıyor, `design`in
+            # doğrudan altında değil; oraya yazılırsa RenderCV "bu alan bu nesne
+            # için bilinmiyor" deyip girdiyi reddediyor.
+            "header": {
+                "connections": {
+                    "show_icons": SHOW_CONNECTION_ICONS,
+                    "phone_number_format": PHONE_NUMBER_FORMAT,
                 }
             },
         },

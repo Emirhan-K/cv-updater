@@ -419,6 +419,64 @@ def check_language_coverage(resume: Resume) -> Iterator[Finding]:
                 )
 
 
+def _i18n_owners(resume: Resume) -> Iterator[tuple[str, object]]:
+    """`x_i18n` taşıyabilen her nesne, raporlanabilir yoluyla."""
+    yield "basics", resume.basics
+    for section_name in Sections.model_fields:
+        for item in getattr(resume.sections, section_name).items:
+            yield f"{section_name}/{item.id}", item
+            for role in getattr(item, "roles", []):
+                yield f"{section_name}/{item.id}/{role.id}", role
+
+
+def check_i18n_fields(resume: Resume) -> Iterator[Finding]:
+    """`x_i18n` içindeki alan adları modelde gerçekten var mı?
+
+    Çeviri elle yazılıyor ve yanlış yazılmış bir alan adı (`possition`) hiçbir
+    hata vermeden hiçbir şey yapmıyor — CV İngilizce çıkıyor, unvan Türkçe
+    kalıyor ve sebebi görünmüyor. Kural o sessiz başarısızlığı sese çeviriyor.
+    """
+    for where, owner in _i18n_owners(resume):
+        translations = getattr(owner, "x_i18n", None) or {}
+        for language, fields in translations.items():
+            for field in fields:
+                if field not in type(owner).model_fields:
+                    yield Finding(
+                        "error",
+                        "content.unknown_i18n_field",
+                        f"{where}/x_i18n/{language}",
+                        f"`{field}` bu öğede yok — çeviri uygulanmayacak.",
+                        f"Alan adını düzelt; geçerli olanlar: {sorted(type(owner).model_fields)}.",
+                    )
+                elif not isinstance(getattr(owner, field, None), str):
+                    yield Finding(
+                        "error",
+                        "content.unknown_i18n_field",
+                        f"{where}/x_i18n/{language}",
+                        f"`{field}` metin alanı değil — yalnızca metinler çevrilebilir.",
+                        "Çeviri tablosundan çıkar.",
+                    )
+
+
+def check_bullet_roles(resume: Resume) -> Iterator[Finding]:
+    """Maddenin işaret ettiği rol gerçekten var mı?
+
+    Yazım hatası ya da silinmiş bir rol maddeyi kaybettirmiyor (en güncel role
+    düşüyor, `render_json._attach_bullets`) ama sessizce yanlış yere koyuyor.
+    """
+    for item in resume.sections.experience.items:
+        known = {role.id for role in item.roles}
+        for bullet in item.x_bullets:
+            if bullet.role and bullet.role not in known:
+                yield Finding(
+                    "error",
+                    "bullets.unknown_role",
+                    f"experience/{item.id}/{bullet.id}",
+                    f"`role: {bullet.role}` bu deneyimde yok.",
+                    f"Geçerli rol id'leri: {sorted(known) or 'yok'}.",
+                )
+
+
 def check_impact(resume: Resume) -> Iterator[Finding]:
     """Ölçülebilir etki eksik olan maddeler. (TODO.md §1 son madde)
 
@@ -463,6 +521,8 @@ CHECKS = (
     check_ids,
     check_superset_size,
     check_language_coverage,
+    check_i18n_fields,
+    check_bullet_roles,
     check_impact,
 )
 

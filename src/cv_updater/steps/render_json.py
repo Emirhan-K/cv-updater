@@ -31,13 +31,40 @@ from cv_updater.lint import LIGATURES, fix_ligatures
 from cv_updater.models.candidates import CandidatePool
 from cv_updater.models.job import Language
 from cv_updater.models.resume import ExperienceItem, Item, Resume, Role, Sections
-from cv_updater.models.tailor import TailorPlan
+from cv_updater.models.tailor import SelectedBullet, TailorPlan
+from cv_updater.periods import translate_period
 from cv_updater.steps.score import parse_period_end
 
 TAILORED_FILENAME = "tailored.json"
 
 #: `metadata.page.locale` — ATS ve PDF tarafı dili buradan okuyor.
 LOCALES: dict[str, str] = {"tr": "tr-TR", "en": "en-US"}
+
+#: Bölüm başlıkları CV'nin dilinde olmalı. Süper set tek dilde yazıldığı için
+#: (`master.json` Türkçe) İngilizce bir çalıştırmada başlıklar Türkçe kalıyordu:
+#: içerik İngilizce, üstündeki "Özet" Türkçe. `steps/render_pdf.SECTION_TITLES`
+#: aynı işi RenderCV tarafında yapıyor — orada başlık sözlük anahtarından
+#: geldiği için tablo ayrı duruyor, ama **isimler birebir aynı olmalı**.
+SECTION_TITLES: dict[str, dict[Language, str]] = {
+    "summary": {"tr": "Özet", "en": "Summary"},
+    "profiles": {"tr": "Profiller", "en": "Profiles"},
+    "experience": {"tr": "Deneyim", "en": "Experience"},
+    "education": {"tr": "Eğitim", "en": "Education"},
+    "projects": {"tr": "Projeler", "en": "Projects"},
+    "skills": {"tr": "Yetenekler", "en": "Skills"},
+    "languages": {"tr": "Diller", "en": "Languages"},
+    "certifications": {"tr": "Sertifikalar", "en": "Certifications"},
+    "awards": {"tr": "Ödüller", "en": "Awards"},
+    "publications": {"tr": "Yayınlar", "en": "Publications"},
+    "volunteer": {"tr": "Gönüllülük", "en": "Volunteering"},
+    "interests": {"tr": "İlgi Alanları", "en": "Interests"},
+    "references": {"tr": "Referanslar", "en": "References"},
+}
+
+#: `period` taşıyan bölümler — tarih çevirisi (issue 14) bunları dolaşıyor.
+_PERIOD_SECTIONS = ("experience", "education", "projects", "volunteer")
+#: `date` taşıyan bölümler; tek uçlu tarih ama çeviri kuralı aynı.
+_DATE_SECTIONS = ("certifications", "awards", "publications")
 
 # --- Ligatür savunması ----------------------------------------------------- #
 # TODO.md §1'in kritik bulgusu: "fine-tuning" PDF'te "ﬁne-tuning" olup ATS'in
@@ -153,13 +180,91 @@ def render(
     _render_skills(doc, plan, stamp)
     _render_profiles(doc, stamp)
     _renumber_remaining(doc, stamp)
+    _render_section_titles(doc, target)
+    _render_periods(doc, target)
+    _apply_i18n(doc, target)
     _render_metadata(doc, target, font)
 
     return doc
 
 
-def _attach_bullets(item: ExperienceItem, texts: list[str]) -> None:
-    """Maddeleri deneyimin doğru yerine yazar.
+def _translate_fields(owner: Any, language: Language) -> None:
+    """Bir öğenin `x_i18n` çevirilerini hedef dilde uygular.
+
+    İki kısıt var:
+
+    * Yalnızca **modelde gerçekten var olan** metin alanları yazılıyor. Yanlış
+      yazılmış bir alan adı (`possition`) sessizce yeni bir alan uydurmasın
+      diye; `validate` bunu ayrıca `content.unknown_i18n_field` ile raporluyor.
+    * **Boş alan çevrilmiyor.** Boş bir alan "burada gösterilecek bir şey yok"
+      demek ve derlemenin bir kararı olabilir: rol taşıyan deneyimlerde öğe
+      seviyesindeki unvan bilerek siliniyor (`_attach_bullets`). Çeviri onu
+      geri yazsaydı Preunec'te "AI Team Lead" yine iki kez görünürdü — ilk
+      sürümde tam olarak bu oldu.
+    """
+    for field, value in (getattr(owner, "x_i18n", None) or {}).get(language, {}).items():
+        if field in type(owner).model_fields and getattr(owner, field, None):
+            if isinstance(getattr(owner, field), str):
+                setattr(owner, field, value)
+
+
+def _apply_i18n(doc: Resume, language: Language) -> None:
+    """Tek örnekli alanların (unvan, derece, dil seviyesi) çevirisini uygular.
+
+    Madde ve özet iki dilde yaşıyor, unvan yaşamıyor: bir deneyimin bir
+    `position`'ı var. İlk İngilizce CV'de maddeler İngilizceydi ama üstlerinde
+    "Stajyer Yazılım Mühendisi" yazıyordu. Çeviri süper sette elle yazılıyor
+    (`x_i18n`); burada yapılan iş yalnızca doğru dili seçmek — **modele
+    sorulmuyor**, unvan alanı guardrail'in dokunulmaz tuttuğu alanlardan.
+    """
+    _translate_fields(doc.basics, language)
+    for section_name in Sections.model_fields:
+        for item in getattr(doc.sections, section_name).items:
+            _translate_fields(item, language)
+            for role in getattr(item, "roles", []):
+                _translate_fields(role, language)
+
+
+def _render_section_titles(doc: Resume, language: Language) -> None:
+    """Bölüm başlıklarını CV'nin diline çevirir.
+
+    **Yalnızca dolu başlıklar çevriliyor.** Boş bir başlık Reactive Resume'da
+    "bu bölümü gösterme" değil, "varsayılanı kullan" demek; oraya metin yazmak
+    süper sette olmayan bir bölümü sayfaya çağırabilirdi.
+    """
+    if (title := SECTION_TITLES["summary"].get(language)) and doc.summary.title:
+        doc.summary.title = title
+
+    for name, titles in SECTION_TITLES.items():
+        if name == "summary":
+            continue
+        section = getattr(doc.sections, name, None)
+        if section is None or not section.title:
+            continue
+        if translated := titles.get(language):
+            section.title = translated
+
+
+def _render_periods(doc: Resume, language: Language) -> None:
+    """Tarihleri CV'nin diline çevirir — `cv_updater.periods`.
+
+    Süper set tarihleri tek dilde tutuyor (ve tutmalı: tarih bir olgu, varyantı
+    yok). İlk İngilizce CV'de bütün sağ sütun Türkçe çıkmıştı. Çeviri
+    deterministik ve sözlük tabanlı; tanınmayan bir dönem olduğu gibi kalıyor.
+    """
+    for name in _PERIOD_SECTIONS:
+        for item in getattr(doc.sections, name).items:
+            item.period = translate_period(item.period, language)
+            for role in getattr(item, "roles", []):
+                role.period = translate_period(role.period, language)
+
+    for name in _DATE_SECTIONS:
+        for item in getattr(doc.sections, name).items:
+            item.date = translate_period(item.date, language)
+
+
+def _attach_bullets(item: ExperienceItem, selected: list[SelectedBullet]) -> None:
+    """Maddeleri deneyimin doğru rolüne yazar.
 
     **Roller varsa maddeler öğe seviyesine yazılamaz.** Reactive Resume bir
     deneyimde `roles[]` doluysa öğenin kendi `description`'ını render etmiyor;
@@ -168,21 +273,37 @@ def _attach_bullets(item: ExperienceItem, texts: list[str]) -> None:
     PDF'te maddesiz çıktı: `tailored.json`'da 4 madde duruyordu ama sayfada
     yalnızca unvan satırları görünüyordu.
 
-    Maddeler **en güncel role** yazılıyor. Terfi çizgisi CV'de değerli bir
-    sinyal, onu düzleştirmek yerine korunuyor; hangi maddenin hangi role ait
-    olduğu bilgisi süper sette olmadığı için hepsi güncel rolün altında
-    toplanıyor.
+    Dağıtım süper setteki `x_bullets[].role` alanına bakıyor. İkinci PDF'in
+    bulgusu buydu: bütün maddeler en güncel role yığıldığı için terfi öncesi
+    "Yazılım Mühendisi" satırı sayfada **başlığı olup gövdesi olmayan** bir
+    satır olarak duruyordu. Artık her madde kendi rolünün altına gidiyor;
+    `role` yazılmamış maddeler (terfi taşımayan deneyimlerin tamamı) en güncel
+    role düşüyor, yani eski davranış varsayılan olarak korunuyor.
     """
-    markup = bullet_list(texts)
     if not item.roles:
-        item.description = markup
+        item.description = bullet_list([bullet.rewritten for bullet in selected])
         return
 
+    owner = {bullet.id: bullet.role for bullet in item.x_bullets}
+    known = {role.id for role in item.roles}
     latest = max(item.roles, key=_role_sort_key)
-    latest.description = markup
+
+    grouped: dict[str, list[str]] = {role.id: [] for role in item.roles}
+    for bullet in selected:
+        role_id = owner.get(bullet.source_id, "")
+        grouped[role_id if role_id in known else latest.id].append(bullet.rewritten)
+
+    for role in item.roles:
+        role.description = bullet_list(grouped[role.id])
+
     # Öğe seviyesi bilerek boşaltılıyor: Reactive Resume bir gün ikisini birden
     # render ederse maddeler iki kez görünürdü.
     item.description = ""
+    # Aynı sebeple unvan da: Reactive Resume öğenin `position`'ını **ve** rol
+    # satırlarını birden basıyor, o yüzden Preunec'te "AI Team Lead" arka arkaya
+    # iki kez görünüyordu. Roller varsa unvanı roller taşır; öğe satırında
+    # şirket adı ve toplam süre kalır.
+    item.position = ""
 
 
 def _role_sort_key(role: Role) -> tuple[int, date]:
@@ -200,7 +321,7 @@ def _render_experiences(doc: Resume, plan: TailorPlan, stamp: str) -> None:
         item = next((i for i in doc.sections.experience.items if i.id == entry.source_id), None)
         if item is None:
             continue
-        _attach_bullets(item, [bullet.rewritten for bullet in entry.bullets])
+        _attach_bullets(item, entry.bullets)
         item.hidden = False
         ordered.append(item)
 
@@ -302,30 +423,40 @@ def _renumber_remaining(doc: Resume, stamp: str) -> None:
         field.id = new_id(stamp, field.id)
 
 
-def nearest_weight(weight: str, available: tuple[str, ...]) -> str:
-    """İstenen ağırlığa en yakın **gerçekten var olan** ağırlık.
-
-    Eşitlikte kalın olan seçilir: 500 ile 400/700 arasında kalırsa 400'e iner
-    (gövde metni), ama 600 için 700 gelir (başlık) — okunabilirlik yönünde.
-    """
-    target = int(weight)
-    return min(available, key=lambda value: (abs(int(value) - target), -int(value)))
-
-
 def _render_typography(doc: Resume, font: str) -> None:
-    """Fontu ligatürsüz olanla değiştirir ve ağırlıkları fontun taşıdıklarına indirger."""
+    """Fontu ligatürsüz olanla değiştirir ve **gerçekten var olan** ağırlıkları yükler.
+
+    `fontWeights` "metin bu ağırlıkta yazılsın" demiyor; **hangi yüzlerin
+    gömüleceğini** söylüyor. Reactive Resume şablonu şirket ve proje adlarını
+    yarı kalın basıyor, ama o yüz gömülü değilse tarayıcı sessizce normale
+    düşüyor.
+
+    İlk sürüm her istenen ağırlığı en yakınına indirgiyordu: süper set gövde
+    için `["400", "500"]` istiyor, Tinos yalnızca 400/700 taşıyor, 500 → 400'e
+    iniyor ve liste `["400"]`e çöküyordu. **Ölçüldü** (2026-08-08, üretilen
+    PDF): dosyada `Tinos-Bold` yalnızca ad ve bölüm başlıklarında geçiyor,
+    şirket adlarının hepsi `Tinos-Regular`. Kalın yüz sayfaya hiç girmemişti.
+
+    Bu yüzden artık indirgeme yok: kısıtlı bir fontta **taşıdığı ağırlıkların
+    tamamı** yükleniyor. Bedeli birkaç KB, karşılığı şablonun kalın istediği
+    her yerin gerçekten kalın çıkması.
+    """
     available = FONT_WEIGHTS.get(font)
     for block in (doc.metadata.typography.body, doc.metadata.typography.heading):
         block.fontFamily = font
         if available:
-            block.fontWeights = list(
-                dict.fromkeys(nearest_weight(weight, available) for weight in block.fontWeights)
-            ) or [available[0]]
+            block.fontWeights = list(available)
 
 
 def _render_metadata(doc: Resume, language: Language, font: str) -> None:
-    """Dil, tipografi ve ligatür ayarları."""
+    """Dil, tipografi, ikonlar ve ligatür ayarları."""
     doc.metadata.page.locale = LOCALES.get(language, LOCALES["tr"])
+    # İletişim satırındaki zarf/telefon ikonları kapatılıyor. ATS için gürültü:
+    # ikon metin katmanında ya hiç yok (Reactive Resume onları SVG basıyor) ya
+    # da özel kullanım alanından bir glif olarak çıkıyor. Bölüm ikonları süper
+    # sette zaten kapalı; iletişim ikonları da aynı sebeple kapanıyor.
+    doc.metadata.page.hideIcons = True
+    doc.metadata.page.hideSectionIcons = True
     _render_typography(doc, font)
     doc.metadata.stylesheet = {  # type: ignore[attr-defined]
         "mode": "legacy",

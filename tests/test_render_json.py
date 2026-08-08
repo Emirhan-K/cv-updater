@@ -32,7 +32,6 @@ from cv_updater.steps.render_json import (
     TAILORED_FILENAME,
     bullet_list,
     has_ligatures,
-    nearest_weight,
     new_id,
     paragraph,
     read_tailored,
@@ -204,8 +203,10 @@ class TestImmutableFields:
                 for item in rendered.sections.experience.items
                 if item.company == original.company
             )
-            assert match.position == original.position
             assert match.period == original.period
+            # Rol taşıyan deneyimde unvanı roller taşır (aşağıdaki test).
+            if not original.roles:
+                assert match.position == original.position
 
     def test_roles_survive_unchanged(self, resume: Resume, rendered: Resume) -> None:
         original = resume.sections.experience.items[0].roles[0]
@@ -310,6 +311,107 @@ class TestRoles:
             original.period,
         )
 
+    def test_the_item_title_is_cleared_when_roles_carry_it(self, rendered: Resume) -> None:
+        """Regresyon: Preunec'te "AI Team Lead" arka arkaya iki kez yazıyordu.
+
+        Reactive Resume öğenin `position`'ını **ve** rol satırlarını birden
+        basıyor; en güncel rolün unvanı öğeninkiyle aynı olduğunda (terfi
+        çizgisinin normal hali) aynı satır iki kez görünüyor.
+        """
+        item = rendered.sections.experience.items[0]
+        assert item.roles
+        assert item.position == ""
+        assert item.company == "Örnek AI"
+
+    def test_a_roleless_item_keeps_its_title(self, rendered: Resume) -> None:
+        old = next(i for i in rendered.sections.experience.items if i.company == "Eski Yazılım")
+        assert old.position == "Stajyer"
+
+
+class TestBulletsPerRole:
+    """Regresyon: terfi öncesi rol sayfada başlığı olup gövdesi olmayan bir satırdı.
+
+    Maddelerin hepsi en güncel role yığılıyordu; süper set artık madde başına
+    `role` taşıyabiliyor ve dağıtım ona bakıyor.
+    """
+
+    @pytest.fixture
+    def promoted(self, resume: Resume) -> Resume:
+        item = resume.sections.experience.items[0]
+        item.roles = [
+            Role(id="role-eski", position="Junior", period="Ocak 2025 – Mayıs 2026"),
+            Role(id="role-yeni", position="Kıdemli", period="Mayıs 2026 – Devam Ediyor"),
+        ]
+        item.x_bullets[0].role = "role-eski"
+        item.x_bullets[1].role = "role-yeni"
+        return resume
+
+    @pytest.fixture
+    def both_bullets(self) -> TailorPlan:
+        return TailorPlan(
+            summary="Görüntü işleme üzerine çalışan bir mühendis.",
+            summary_source_ids=["exp-ai.vision.tr"],
+            experiences=[
+                TailoredExperience(
+                    source_id="exp-ai",
+                    bullets=[
+                        SelectedBullet(
+                            source_id="exp-ai.vision.tr",
+                            rewritten="Görüntü işleme modellerini veri hattına bağladı.",
+                            rationale="Uyuyor.",
+                        ),
+                        SelectedBullet(
+                            source_id="exp-ai.docs.tr",
+                            rewritten="Dokümantasyonu güncelledi.",
+                            rationale="Uyuyor.",
+                        ),
+                    ],
+                )
+            ],
+            skill_ids=["sk-cv"],
+            project_ids=[],
+        )
+
+    def test_each_bullet_lands_on_its_own_role(
+        self, promoted: Resume, both_bullets: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(promoted, both_bullets, pool, run_id=RUN)
+
+        roles = {role.position: role.description for role in doc.sections.experience.items[0].roles}
+        assert "Görüntü işleme" in roles["Junior"]
+        assert "Dokümantasyonu" in roles["Kıdemli"]
+        assert "Dokümantasyonu" not in roles["Junior"]
+
+    def test_an_unassigned_bullet_falls_to_the_most_recent_role(
+        self, promoted: Resume, both_bullets: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """`role` yazılmamış madde eski davranışı korur — güncel role gider."""
+        promoted.sections.experience.items[0].x_bullets[0].role = ""
+
+        doc = render(promoted, both_bullets, pool, run_id=RUN)
+
+        roles = {role.position: role.description for role in doc.sections.experience.items[0].roles}
+        assert "Görüntü işleme" in roles["Kıdemli"]
+        assert roles["Junior"] == ""
+
+    def test_an_unknown_role_id_does_not_lose_the_bullet(
+        self, promoted: Resume, both_bullets: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Silinmiş bir role atıf sessizce maddeyi düşürmemeli."""
+        promoted.sections.experience.items[0].x_bullets[0].role = "role-yok"
+
+        doc = render(promoted, both_bullets, pool, run_id=RUN)
+
+        roles = {role.position: role.description for role in doc.sections.experience.items[0].roles}
+        assert "Görüntü işleme" in roles["Kıdemli"]
+
+    def test_the_role_field_does_not_leak_into_the_output(
+        self, promoted: Resume, both_bullets: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(promoted, both_bullets, pool, run_id=RUN)
+
+        assert '"role"' not in to_json(doc)
+
 
 class TestIds:
     def test_ids_are_fresh(self, rendered: Resume) -> None:
@@ -382,17 +484,24 @@ class TestTypography:
     def test_the_default_font_is_measured_ligature_free(self) -> None:
         assert DEFAULT_FONT in LIGATURE_FREE_FONTS
 
-    def test_weights_are_clamped_to_what_the_font_carries(
+    def test_a_restricted_font_still_loads_its_bold_face(
         self, resume: Resume, plan: TailorPlan, pool: CandidatePool
     ) -> None:
-        """Tinos yalnızca 400/700 taşıyor; 500 ve 600 istenirse font bulunamaz."""
+        """Regresyon: şirket ve proje adları PDF'te kalın çıkmıyordu.
+
+        Süper set gövde için `["400", "500"]` istiyor, Tinos 500 taşımıyor.
+        İlk sürüm her ağırlığı en yakınına indirgiyordu ve liste `["400"]`e
+        çöküyordu — kalın yüz PDF'e hiç girmiyordu, şablonun kalın istediği
+        her yer sessizce normale düşüyordu. `fontWeights` "şu ağırlıkta yaz"
+        değil "şu yüzleri göm" demek: fontun taşıdığı ne varsa yüklenmeli.
+        """
         resume.metadata.typography.body.fontWeights = ["400", "500"]
         resume.metadata.typography.heading.fontWeights = ["600"]
 
         doc = render(resume, plan, pool, run_id=RUN)
 
-        assert doc.metadata.typography.body.fontWeights == ["400"]
-        assert doc.metadata.typography.heading.fontWeights == ["700"]
+        assert doc.metadata.typography.body.fontWeights == ["400", "700"]
+        assert doc.metadata.typography.heading.fontWeights == ["400", "700"]
 
     def test_a_font_can_be_forced(
         self, resume: Resume, plan: TailorPlan, pool: CandidatePool
@@ -404,11 +513,6 @@ class TestTypography:
         assert (
             doc.metadata.typography.body.fontWeights == resume.metadata.typography.body.fontWeights
         )
-
-    def test_nearest_weight_prefers_the_bolder_side_on_a_tie(self) -> None:
-        assert nearest_weight("550", ("400", "700")) == "700"
-        assert nearest_weight("500", ("400", "700")) == "400"
-        assert nearest_weight("400", ("400", "700")) == "400"
 
     def test_the_stylesheet_is_still_written_for_the_web_preview(self, rendered: Resume) -> None:
         """PDF'i kurtarmıyor ama web önizlemesinde işe yarıyor; zararsız."""
@@ -425,6 +529,172 @@ class TestLanguage:
     ) -> None:
         doc = render(resume, plan, pool, language="en", run_id=RUN)
         assert doc.metadata.page.locale == "en-US"
+
+
+class TestSectionTitles:
+    """Regresyon: İngilizce CV'nin başlıkları Türkçe kalıyordu.
+
+    İçerik İngilizceydi, üstünde "Özet" ve "Deneyim" yazıyordu — süper set tek
+    dilde yazıldığı için başlıklar olduğu gibi kopyalanıyordu.
+    """
+
+    @pytest.fixture
+    def titled(self, resume: Resume) -> Resume:
+        resume.summary.title = "Özet"
+        resume.sections.experience.title = "Deneyim"
+        resume.sections.projects.title = "Projeler"
+        resume.sections.skills.title = "Yetenekler"
+        resume.sections.education.title = "Eğitim"
+        return resume
+
+    def test_english_titles_replace_the_turkish_ones(
+        self, titled: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(titled, plan, pool, language="en", run_id=RUN)
+
+        assert doc.summary.title == "Summary"
+        assert doc.sections.experience.title == "Experience"
+        assert doc.sections.projects.title == "Projects"
+        assert doc.sections.skills.title == "Skills"
+        assert doc.sections.education.title == "Education"
+
+    def test_turkish_titles_are_left_alone(
+        self, titled: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(titled, plan, pool, language="tr", run_id=RUN)
+        assert doc.summary.title == "Özet"
+        assert doc.sections.experience.title == "Deneyim"
+
+    def test_an_empty_title_stays_empty(
+        self, titled: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Boş başlık "varsayılanı kullan" demek; oraya metin yazmak bölüm uydurur."""
+        titled.sections.languages.title = ""
+
+        doc = render(titled, plan, pool, language="en", run_id=RUN)
+
+        assert doc.sections.languages.title == ""
+
+
+class TestPeriodLanguage:
+    """Regresyon: İngilizce CV'de sağ sütundaki her tarih Türkçeydi.
+
+    Tarih bir olgu, süper sette varyantı yok; çeviri deterministik ve sözlük
+    tabanlı (`cv_updater.periods`), LLM'e gitmiyor.
+    """
+
+    def test_experience_and_role_periods_are_translated(
+        self, resume: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(resume, plan, pool, language="en", run_id=RUN)
+
+        item = doc.sections.experience.items[0]
+        assert item.period == "January 2026 – Present"
+        assert item.roles[0].period == "May 2026 – Present"
+
+    def test_project_periods_are_translated(
+        self, resume: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(resume, plan, pool, language="en", run_id=RUN)
+        assert doc.sections.projects.items[0].period == "July 2026 - Present"
+
+    def test_a_plain_year_range_is_left_alone(
+        self, resume: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(resume, plan, pool, language="en", run_id=RUN)
+        assert doc.sections.education.items[0].period == "2018-2022"
+
+    def test_turkish_runs_keep_turkish_dates(self, rendered: Resume) -> None:
+        assert rendered.sections.experience.items[0].period == "Ocak 2026 – Devam Ediyor"
+
+
+class TestFieldTranslations:
+    """Regresyon: İngilizce CV'de unvanlar, derece ve dil seviyeleri Türkçeydi.
+
+    Maddeler iki dilde yaşıyor, unvan yaşamıyor: bir deneyimin bir `position`'ı
+    var. Çeviri süper sette elle yazılıyor (`x_i18n`) ve modele hiç sorulmuyor.
+    """
+
+    @pytest.fixture
+    def translated(self, resume: Resume) -> Resume:
+        resume.basics.headline = "Yazılım Mühendisi"
+        resume.basics.x_i18n = {"en": {"headline": "Software Engineer"}}
+        item = resume.sections.experience.items[0]
+        item.x_i18n = {"en": {"position": "Software Engineer"}}
+        item.roles[0].x_i18n = {"en": {"position": "Senior"}}
+        resume.sections.education.items[0].x_i18n = {"en": {"degree": "BSc"}}
+        return resume
+
+    def test_english_overrides_are_applied(
+        self, translated: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(translated, plan, pool, language="en", run_id=RUN)
+
+        assert doc.basics.headline == "Software Engineer"
+        assert doc.sections.experience.items[0].roles[0].position == "Senior"
+        assert doc.sections.education.items[0].degree == "BSc"
+
+    def test_the_turkish_run_keeps_the_superset_values(
+        self, translated: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(translated, plan, pool, language="tr", run_id=RUN)
+
+        assert doc.basics.headline == "Yazılım Mühendisi"
+        assert doc.sections.experience.items[0].roles[0].position == "Kıdemli"
+
+    def test_an_unknown_field_name_is_ignored(
+        self, translated: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Yazım hatası yeni bir alan uydurmamalı — `validate` ayrıca raporluyor."""
+        translated.basics.x_i18n = {"en": {"headlien": "Typo"}}
+
+        doc = render(translated, plan, pool, language="en", run_id=RUN)
+
+        assert doc.basics.headline == "Yazılım Mühendisi"
+        assert not hasattr(doc.basics, "headlien")
+
+    def test_translations_do_not_leak_into_the_output(
+        self, translated: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        doc = render(translated, plan, pool, language="en", run_id=RUN)
+        assert "x_i18n" not in to_json(doc)
+
+    def test_a_cleared_field_is_not_refilled_by_a_translation(
+        self, translated: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Regresyon: çeviri, silinmiş unvanı geri yazıp tekrarı diriltiyordu.
+
+        Rol taşıyan deneyimde öğe seviyesindeki unvan bilerek siliniyor
+        (`_attach_bullets`); `x_i18n` onu geri yazarsa Preunec'te "AI Team Lead"
+        yine arka arkaya iki kez görünür.
+        """
+        doc = render(translated, plan, pool, language="en", run_id=RUN)
+
+        item = doc.sections.experience.items[0]
+        assert item.roles
+        assert item.position == ""
+
+    def test_an_explicit_period_translation_wins(
+        self, translated: Resume, plan: TailorPlan, pool: CandidatePool
+    ) -> None:
+        """Sözlük çevirisi genel kural; elle yazılan çeviri onu ezebilmeli."""
+        translated.sections.experience.items[0].x_i18n = {"en": {"period": "Since 2026"}}
+
+        doc = render(translated, plan, pool, language="en", run_id=RUN)
+
+        assert doc.sections.experience.items[0].period == "Since 2026"
+
+
+class TestContactIcons:
+    """İletişim ikonları kapalı: ATS için gürültü, metin katmanında karşılığı yok."""
+
+    def test_icons_are_hidden(self, rendered: Resume) -> None:
+        assert rendered.metadata.page.hideIcons is True
+        assert rendered.metadata.page.hideSectionIcons is True
+
+    def test_the_address_itself_survives(self, rendered: Resume) -> None:
+        """İkon gidiyor, adres kalıyor — ATS'in okuduğu şey bu."""
+        assert rendered.basics.email == "ada@example.com"
 
 
 class TestPersistence:
