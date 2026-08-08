@@ -120,11 +120,12 @@ Soruyu atlamak için `--yes`.
   geri istiyorsan editörde göz ikonuna tıklaman yeterli — yeniden yazman gerekmiyor.
 - **Unvan, şirket adı ve tarihler `master.json` ile birebir aynı.** Bu alanlar modele hiç
   gösterilmiyor (bkz. [`GUARDRAILS.md`](GUARDRAILS.md)).
-- **Font `Tinos` olarak değiştirilir** (süper sette ne yazıyorsa ezilir). Sebep: Reactive
-  Resume PDF'i `@react-pdf/renderer` ile üretiyor ve fontun ligatürünü CSS ile kapatmak
-  mümkün değil — "fine-tuning" PDF'in metin katmanına `fne-tuning` olarak giriyor ve ATS
-  aramayı kaçırıyor. Tinos'ta ligatür glifi hiç yok. Beğenmezsen `--font Inter` ya da
-  `--font Arimo` (ikisi de ölçüldü, ligatürsüz); başka bir font verirsen uyarı basılır.
+- **Font `Tinos` olarak değiştirilir** (süper sette ne yazıyorsa ezilir). Bu bir hatayı
+  düzeltmiyor, bir riski kapatıyor: ölçüldüğü kadarıyla Reactive Resume zaten ligatür
+  üretmiyor, ama Tinos'ta ligatür glifi hiç olmadığı için render yolu değişse bile
+  ("fine-tuning" → `fne-tuning`) sorun doğamaz. Times New Roman metrik eşi olduğu için
+  ATS tarafında da en konvansiyonel seçim. Beğenmezsen `--font Inter` ya da `--font Arimo`
+  (ikisi de ölçüldü, ligatürsüz); başka bir font verirsen uyarı basılır.
 - **Terfi taşıyan deneyimlerde maddeler en güncel rolün altına yazılır.** Reactive Resume
   bir deneyimde `roles[]` doluysa öğe seviyesindeki açıklamayı render etmiyor.
 - Dil `--lang` ile zorlanmadıysa ilanın dilinden gelir; `metadata.page.locale` ona göre

@@ -224,22 +224,31 @@ Kural listesi ve tasarım gerekçesi: [`GUARDRAILS.md`](GUARDRAILS.md).
 - `x_meta` / `x_bullets` çıktıdan tamamen silinir — süper set paylaşılan dosyaya sızmaz
 - her öğeye çalıştırmaya özgü yeni `id` (UUID5) verilir, import'ta çakışma olmasın
 
-### Ligatür savunması — üç katman, biri işe yarıyor
+### Ligatür savunması — nerede gerçek, nerede önlem
 
-TODO.md §1'in kritik bulgusu: "fine-tuning" PDF'in metin katmanına tek bir ligatür glifi
-olarak gömülüyor, çıkarıldığında `fne-tuning` oluyor, ATS aramayı kaçırıyor.
+TODO.md §1'in kritik bulgusu: "fine-tuning" PDF'te `ﬁne-tuning` olup ATS'in aramasını
+kaçırıyor. **Bu bulgu kaynak metinle ilgiliydi** — CV'de düz `ﬁ` karakteri duruyordu.
 
 | Katman | Durum |
 |---|---|
-| Kaynak metindeki `ﬁ`/`ﬂ` karakterlerini açmak (`fix_ligatures`) | gerekli ama yetersiz — sorun kaynakta değil render'da |
-| `metadata.stylesheet` → `font-variant-ligatures: none` | **çalışmıyor.** RR PDF'i `@react-pdf/renderer` ile üretiyor, o bu CSS'i tanımıyor. İlk gerçek PDF'te ligatürler aynen duruyordu. Stil yine yazılıyor (web önizlemesi için). |
-| **Ligatürü olmayan font** | **tek gerçek çözüm.** |
+| Kaynak metindeki `ﬁ`/`ﬂ` karakterlerini açmak (`fix_ligatures` + `validate`) | **asıl çözüm bu.** Bulgu buradaydı, burada kapandı. |
+| `metadata.stylesheet` → `font-variant-ligatures: none` | Etkisi **ölçülemedi** — kapatılacak ligatür yokmuş. Web önizlemesi için duruyor. |
+| Ligatürü olmayan font | **önlem**, düzeltme değil. Bedeli sıfır olduğu için varsayılan. |
 
-Aday fontların GSUB tabloları ölçüldü (2026-08-07, `fontTools` ile): `Tinos` ve `Inter` ne
-`liga` özelliği ne de ligatür glifi taşıyor, `Arimo`'da özellik yok; üçü de Türkçe
-karakterlerin tamamını kapsıyor. Varsayılan **Tinos** — Times New Roman metrik eşi, en
-klasik ATS-güvenli font, ve süper setin serif tercihini koruyor. `--font` ile değiştirilir;
-ölçülmemiş bir font verilirse uyarı basılır.
+İki gerçek PDF ölçüldü (2026-08-07): Reactive Resume PDF'i `@react-pdf/renderer` ile
+üretiyor ve **`liga` özelliğini uygulamıyor.** Ne IBM Plex Serif'le ne Tinos'la üretilen
+dosyada tek bir ligatür glifi var (ToUnicode'da çok karakterli eşleme sıfır); `pypdf` ve
+`pdfplumber` ikisi de bütün f-kelimelerini eksiksiz çıkarıyor.
+
+Font seçimi yine de yapılıyor çünkü bir **risk sınıfını** kapatıyor: react-pdf ileride
+`liga`'yı uygulamaya başlarsa ya da render yolu değişirse (issue 11, RenderCV → Typst)
+ligatür glifi olmayan bir fontta sorun doğamaz.
+
+Aday fontların GSUB tabloları `fontTools` ile ölçüldü: `Tinos` ve `Inter` ne `liga`
+özelliği ne de ligatür glifi taşıyor, `Arimo`'da özellik yok; üçü de Türkçe karakterlerin
+tamamını kapsıyor. Varsayılan **Tinos** — Times New Roman metrik eşi, en konvansiyonel ATS
+fontu, ve süper setin serif tercihini koruyor. `--font` ile değiştirilir; ölçülmemiş bir
+font verilirse uyarı basılır.
 
 Tinos yalnızca 400/700 ağırlığı taşıdığı için süper setin 500/600'ü en yakın gerçek
 ağırlığa indiriliyor (`nearest_weight`) — yoksa Reactive Resume fontu bulamayıp geri düşer.
