@@ -76,6 +76,7 @@ Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
 | `cv-updater report <slug>` | Uyum raporunu yeniden üretir | hayır |
 | `cv-updater render <slug>` | `tailored.json` → PDF (RenderCV/Typst) + otomatik ATS kontrolü | hayır |
 | `cv-updater check <pdf>` | PDF'ten metni geri çıkarıp ATS uyumunu puanlar; kritik bulguda çıkış kodu 1 | hayır |
+| `cv-updater log list/status/stats` | Başvuru günlüğü: takip, durum, "hangi skorun üstünde dönüş geliyor" | hayır |
 
 Guardrail varsayılan olarak **katı**: bir ihlal bulunursa akış durur ve `tailored.json`
 üretilmez. `--repair` ihlalli metni kaynağına döndürüp sürdürür — bir gevşetme değil,

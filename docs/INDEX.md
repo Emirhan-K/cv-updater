@@ -13,6 +13,7 @@
 | [`REPORT.md`](REPORT.md) | Uyum raporu bölüm bölüm; uyum skoru eşikleri, "ne zaman başvurma" | 09 |
 | [`ATS.md`](ATS.md) | ATS öz-kontrolü: yedi kontrol, ağırlıkları, ölçüm sonuçları, elenen sezgiseller | 10 |
 | [`RENDER.md`](RENDER.md) | v1 (elle import) ve v2 (RenderCV) akışları, alan eşleme tablosu, ligatür ölçümü | 11 |
+| [`APPLICATIONS.md`](APPLICATIONS.md) | Günlük başvuru rutini, durumlar, takip bayrağı, uyum skoru ↔ dönüş analizi | 12 |
 
 `MASTER_DATA.md` gitignore'dadır: süper setin durumunu (terfi tarihi, ekip büyüklüğü, tarih
 aralıkları) taşıdığı için `data/master.json` ile aynı gizlilik sınıfındadır. `CLAUDE.md` gibi
@@ -41,9 +42,11 @@ steps/render_json.py   tailored.json derlemesi + rxresu.me şema doğrulaması
 steps/report.py        match_report.md — uyum skoru, gerekçeler, eksikler
 steps/ats_check.py     PDF'ten metni geri oku, ATS uyumunu puanla (LLM yok)
 steps/render_pdf.py    tailored.json → RenderCV YAML → Typst → PDF (opsiyonel)
+steps/applications.py  başvuru arşivi: kayıt, durum, süzme, istatistik
 schema/                rxresu.me şema anlık görüntüsü (--refresh-schema ile yenilenir)
 data/                  master.json (gitignore) · master.example.json · tags.yaml
 out/                   çalıştırma başına bir dizin (gitignore)
+applications/          başvuru arşivi — gönderilen sürüm + meta.json (gitignore)
 ```
 
 Akışın tamamı ve hangi adımın ağa çıktığı [`PIPELINE.md`](PIPELINE.md)'de.

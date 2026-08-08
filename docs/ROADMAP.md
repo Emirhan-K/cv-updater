@@ -46,8 +46,11 @@ Bölüm öğeleri HTML-string bir `description` taşır; her öğenin bir `id`'s
 
 **MVP çizgisi: 01–10.** 11–12 yaşam kalitesi, 13 takip issue'su.
 
-**Durum (7 Ağustos 2026):** issue 01–09 kapandı, Faz 0–2 bitti. Araç uçtan uca çalışıyor.
-Kalan MVP maddesi: issue 10 (ATS öz-kontrolü).
+**Durum (8 Ağustos 2026):** issue 01–12 kapandı, **Faz 0–3 bitti.** Araç ilandan PDF'e kadar
+uçtan uca çalışıyor: uyarlama, render, ATS öz-kontrolü ve başvuru takibi. Açık tek issue 13
+(Faz 4 takip issue'su). 564 test yeşil, hiçbiri ağa çıkmıyor.
+
+Faz 3'ün dokümanları: `docs/ATS.md` (10), `docs/RENDER.md` (11), `docs/APPLICATIONS.md` (12).
 
 Her issue bir **📄 Dokümantasyon** bölümüyle biter: ilgili doküman kapanmadan önce yazılır ya da
 güncellenir (`docs/INDEX.md` her seferinde güncel tutulur).
