@@ -54,7 +54,16 @@ MAX_BULLETS_PER_EXPERIENCE = 8
 #: Projeler daha kısa anlatılıyor; oradaki üst sınır daha dar.
 MAX_BULLETS_PER_PROJECT = 4
 MAX_SKILLS = 30
-MAX_PROJECTS = 5
+#: Kaç proje CV'ye girecek? **Sabit bir sayı yok.** Eskiden 5'ti; sınır iki
+#: sebeple kaldırıldı. Birincisi eleme zaten madde seviyesinde yapılıyor:
+#: `_select` yalnızca skoru sıfırdan büyük maddeleri seçiyor, dolayısıyla ilanla
+#: hiç ilgisi olmayan bir proje havuza `selected_bullets` olmadan giriyor ve
+#: `render_pool` onu modele hiç göstermiyor. İkincisi sayının doğrusu ilana
+#: göre değişiyor: iki güçlü projesi olan bir ilanda üçüncüsü sayfayı doldurur,
+#: proje ağırlıklı bir ilanda beşi de yerinde durur. Kararı model veriyor
+#: (`steps/tailor.SYSTEM_PROMPT`, kural 8); burası yalnızca ilgili olan her
+#: projeyi ona göstermekle yükümlü. `None` = sınırsız.
+MAX_PROJECTS: int | None = None
 #: Hiç eşleşmeyen bir deneyim bile CV'de boş görünmemeli — istihdam boşluğu,
 #: konu dışı bir maddeden daha kötü okunur. Skoru sıfır olsa da bu kadarı kalır.
 MIN_BULLETS_PER_EXPERIENCE = 2
@@ -551,14 +560,16 @@ def build_pool(
             )
         )
 
-    # Deneyimler kronolojik kalır (CV sırası), projeler skora göre elenir: proje
-    # bölümü CV'nin esnek kısmı, deneyim bölümü değil.
+    # Deneyimler kronolojik kalır (CV sırası), projeler skora göre sıralanır:
+    # proje bölümü CV'nin esnek kısmı, deneyim bölümü değil. Sıralama modele
+    # bir öneri.
     projects.sort(key=lambda entry: (-entry.score, entry.id))
-    for entry in projects[MAX_PROJECTS:]:
-        if entry.always_include:
-            continue
-        for bullet in entry.bullets:
-            bullet.selected = False
+    if MAX_PROJECTS is not None:
+        for entry in projects[MAX_PROJECTS:]:
+            if entry.always_include:
+                continue
+            for bullet in entry.bullets:
+                bullet.selected = False
 
     skills: list[ScoredItem] = []
     for item in resume.sections.skills.items:

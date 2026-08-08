@@ -62,6 +62,12 @@ Kurallar:
    bu metin uyum raporuna giriyor, aday okuyacak.
 7. Unvan, şirket adı, tarih ve eğitim senin işin değil; onlar sana sorulmadan
    CV'ye kopyalanıyor. O alanlara dair bir şey yazma.
+8. `project_ids`'te **sabit bir sayı yok**; kaç proje göstereceğine sen karar
+   ver. Ölçü ilanla ilgi: ilana gerçekten hitap eden her projeyi koy, zayıf
+   kalanı bırak. Sayıyı doldurmak için ilgisiz proje ekleme, yer kalmadığını
+   düşünüp güçlü bir projeyi de atma — sayfa düzeni senin sorunun değil.
+   Deneyim bölümü zayıfsa (staj ağırlıklı, kısa geçmiş) projeler o boşluğu
+   doldurur, orada cömert ol. En güçlü proje başta olacak şekilde sırala.
 """
 
 USER_TEMPLATE = """\
@@ -139,7 +145,10 @@ def render_pool(pool: CandidatePool) -> str:
 
     projects = [entry for entry in pool.projects if entry.selected_bullets]
     if projects:
-        lines.append("\n## Projeler (yalnızca id seç; maddeleri olduğu gibi kalacak)")
+        lines.append(
+            "\n## Projeler (yalnızca id seç; maddeleri olduğu gibi kalacak)\n"
+            "Kaç tane göstereceğine sen karar ver — sabit bir sınır yok, ölçü ilanla ilgi."
+        )
         for entry in projects:
             lines.append(f"- [{entry.id}] {entry.title} ({entry.period})")
             for bullet in entry.selected_bullets:

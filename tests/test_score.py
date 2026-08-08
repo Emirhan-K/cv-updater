@@ -428,6 +428,77 @@ class TestSelection:
         assert [entry.id for entry in pool.experiences] == ["exp-ai"]
 
 
+class TestProjectPool:
+    """Proje sayısında sabit sınır yok — kararı model veriyor (`MAX_PROJECTS`)."""
+
+    @staticmethod
+    def _many_projects(resume: Resume, count: int) -> Resume:
+        resume.sections.projects.items = [
+            ProjectItem(
+                id=f"proj-{index}",
+                name=f"Proje {index}",
+                period="Temmuz 2026 - Devam Ediyor",
+                x_bullets=[
+                    _bullet(f"proj-{index}.tests.tr", f"{index} test yazdı.", ["testing", "python"])
+                ],
+            )
+            for index in range(8)
+        ][:count]
+        return resume
+
+    def test_every_relevant_project_reaches_the_model(
+        self, resume: Resume, vocabulary: Any
+    ) -> None:
+        """Eskiden beşte kesiliyordu; sekizi de ilanla ilgiliyse sekizi de gitmeli."""
+        self._many_projects(resume, 8)
+        analysis = _analysis(must=[("Python", ["Python"])], language="tr")
+
+        pool = build_pool(resume, analysis, BACKEND_JOB, vocabulary=vocabulary, today=TODAY)
+
+        assert len([entry for entry in pool.projects if entry.selected_bullets]) == 8
+
+    def test_a_weak_project_ranks_last_instead_of_being_cut(
+        self, resume: Resume, vocabulary: Any
+    ) -> None:
+        """Eleme değil sıralama: ilgisiz proje en sona düşer, kararı model verir.
+
+        Ön filtre projeyi kesmiyor çünkü "bu ilana uzak" ile "bu CV'de yeri yok"
+        aynı şey değil — deneyimi zayıf bir adayda tematik olarak uzak bir proje
+        hâlâ sayfanın en iyi kartı olabilir. Sıralama modele öneri olarak gidiyor.
+        """
+        resume.sections.projects.items = [
+            ProjectItem(
+                id="proj-alakasiz",
+                name="Alakasız",
+                period="Temmuz 2026 - Devam Ediyor",
+                x_bullets=[_bullet("proj-alakasiz.tr", "Flutter arayüzü yazdı.", ["flutter"])],
+            ),
+            ProjectItem(
+                id="proj-uygun",
+                name="Uygun",
+                period="Temmuz 2026 - Devam Ediyor",
+                x_bullets=[_bullet("proj-uygun.tr", "Python aracı yazdı.", ["python"])],
+            ),
+        ]
+        analysis = _analysis(must=[("Python", ["Python"])], language="tr")
+
+        pool = build_pool(resume, analysis, BACKEND_JOB, vocabulary=vocabulary, today=TODAY)
+
+        assert [entry.id for entry in pool.projects] == ["proj-uygun", "proj-alakasiz"]
+        # Kesilmedi — modele hâlâ gösteriliyor.
+        assert pool.projects[-1].selected_bullets
+
+    def test_projects_are_ordered_by_score(self, resume: Resume, vocabulary: Any) -> None:
+        """Sıralama modele öneri olarak gidiyor — en güçlü proje başta."""
+        self._many_projects(resume, 4)
+        analysis = _analysis(must=[("Python", ["Python"])], language="tr")
+
+        pool = build_pool(resume, analysis, BACKEND_JOB, vocabulary=vocabulary, today=TODAY)
+
+        scores = [entry.score for entry in pool.projects]
+        assert scores == sorted(scores, reverse=True)
+
+
 class TestDeterminism:
     def test_same_input_gives_the_same_output(self, resume: Resume, vocabulary: Any) -> None:
         """Issue 06 kabul kriteri, doğrudan."""
