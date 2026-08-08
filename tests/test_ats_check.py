@@ -271,11 +271,11 @@ def test_missing_phone_is_only_a_warning() -> None:
     assert finding.rule == "contact.phone"
 
 
-def test_glued_email_is_reported() -> None:
-    """Sayfa numarası adrese yapışınca ATS yanlış adresi kaydediyor (gerçek CV'de ölçüldü)."""
+def test_email_starting_with_a_digit_is_not_a_finding() -> None:
+    """Rakamla başlayan yerel kısım normaldir — bunu "yapışmış metin" sayan kural elendi."""
     result = check_contact("1emirhankuru@example.com +90 535 950 4623")
-    rules = {finding.rule for finding in result.findings}
-    assert "contact.email_glued" in rules
+    assert result.ratio == 1.0
+    assert result.findings == ()
 
 
 def test_second_email_is_reported() -> None:

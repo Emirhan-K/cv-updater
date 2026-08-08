@@ -94,11 +94,13 @@ SECTION_HEADINGS: dict[str, tuple[str, ...]] = {
 _NON_ALNUM = re.compile(r"[^\w]+", re.UNICODE)
 
 _EMAIL = re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
-#: Yerel kısmı rakamla başlayan adres. Gerçek hayatta nadir, çıkarılan metinde
-#: sık: sayfa numarası ya da yan sütundaki bir öğe adresle aynı satıra düşünce
-#: "1emirhankuru@…" çıkıyor ve ATS adresi böyle kaydediyor. Gerçek bir CV'de
-#: ölçüldü (2026-08-08).
-_GLUED_LOCAL = re.compile(r"^\d")
+# Not: "yerel kısmı rakamla başlıyorsa komşu metin yapışmıştır" diye bir kural
+# yazıldı ve **kaldırıldı** (2026-08-08). Kanıt sanılan `1emirhankuru@gmail.com`
+# adresin gerçek hali çıktı; kural her çalıştırmada yanlış alarm veriyordu.
+# Yapışmış metni doğru yakalamanın yolu sezgisel değil karşılaştırmalı olurdu:
+# PDF'ten okunan adresi `tailored.json`'daki adresle kıyaslamak. `check <pdf>`
+# CV'yi her zaman görmediği için o kontrol buraya değil, ileride render sonrası
+# adıma yazılır.
 #: Telefon: `+90 …` ya da `0…` ile başlayan, 10-14 haneli bir dizi. Baştaki
 #: zorunlu `+`/`0` kasıtlı — yoksa "2018 - 2022 2024" gibi tarih yığınları
 #: telefon sanılıyor.
@@ -484,24 +486,6 @@ def check_contact(text: str) -> CheckResult:
     phones = [match.group() for match in _PHONE.finditer(text)]
 
     findings: list[Finding] = []
-    if glued := [address for address in emails if _GLUED_LOCAL.match(address)]:
-        findings.append(
-            Finding(
-                level="warning",
-                rule="contact.email_glued",
-                message=(
-                    "E-posta adresinin başına komşu bir metin yapışmış görünüyor: "
-                    f"{', '.join(glued)}"
-                ),
-                fix_hint=(
-                    "Genellikle sayfa numarası ya da yan sütundaki bir öğe adresle aynı "
-                    "satıra düşüyor. ATS adresi olduğu gibi alır ve gönderdiği yanıt "
-                    "geri döner — adresin çevresine boşluk bırak ya da konumunu değiştir."
-                ),
-                evidence=tuple(glued),
-            )
-        )
-
     if not emails:
         findings.append(
             Finding(

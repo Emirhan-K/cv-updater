@@ -110,11 +110,17 @@ Uyum raporu (issue 09) o terimi zaten "eksik" diye raporlayıp mülakat hazırl�
 ### İletişim
 
 E-posta kritik: ATS aday kaydını e-postayla açar, okuyamazsa başvuru hiç oluşmaz. Telefon uyarı.
+İkinci bir adres varsa uyarı verilir — ATS hangisini alacağını bilemez.
 
-Ayrıca `contact.email_glued` var: adresin yerel kısmı rakamla başlıyorsa yanına bir şey yapışmış
-demektir. Bu **araçla üretilen gerçek bir PDF'te ölçüldü** — sayfa numarası "1" e-postayla aynı
-satıra düşüp `1emirhankuru@gmail.com` çıkıyordu. ATS adresi olduğu gibi kaydeder ve gönderdiği
-yanıt geri döner. Ekranda hiçbir sorun görünmez; ancak metin katmanına bakınca fark edilir.
+**Elenen bir kural:** "adresin yerel kısmı rakamla başlıyorsa yanına bir şey yapışmıştır" diye bir
+kontrol yazıldı. Kanıtı iki PDF'te birden görünen `1emirhankuru@gmail.com` idi ve sayfa
+numarasının adrese yapıştığı sanıldı. **Kaynağa bakınca adresin gerçek hali çıktı**; kural her
+çalıştırmada yanlış alarm veriyordu, kaldırıldı. Yapışmış metni doğru yakalamanın yolu sezgisel
+değil karşılaştırmalı: PDF'ten okunan adresi `tailored.json`'daki adresle kıyaslamak. `check <pdf>`
+CV'yi her zaman görmediği için o kontrol buraya yazılmadı.
+
+> Buradaki ders `docs/GUARDRAILS.md`'dekiyle aynı: **bir bulgunun kanıtını kaynağa kadar takip
+> etmeden kural yazma.** Ligatür bulgusunda da, burada da ilk teşhis yanlıştı.
 
 ### Link görünürlüğü
 
@@ -167,7 +173,8 @@ kullanmak son derece yaygın ve hiçbir ATS'i bozmuyor. Raporlanır, puanı dü�
 | PDF | Puan | Karar | Bulgular |
 |---|---|---|---|
 | Mart 2026 (elle yapılmış CV) | 60 | 🔴 kritik | 5 kelimede ligatür; GitHub ve LinkedIn metin olarak yok |
-| 8 Ağustos 2026 (araçla üretilen) | 100 | ATS'e hazır | yalnızca `email_glued` uyarısı ve karışık tarih bilgisi |
+| 8 Ağustos 2026 (Reactive Resume'dan) | 100 | ATS'e hazır | yalnızca karışık tarih biçimi bilgisi |
+| 8 Ağustos 2026 (`render` ile, RenderCV) | 98 | ATS'e hazır | bir zorunlu terim eksik; 2 sayfa uyarısı |
 
 İkincisi bir ilana karşı ölçüldüğünde (`--slug novatek-tr2`) 95 puan: 11 zorunlu terimden 9'u
 metinde, eksik olan ikisi (`nesne tespiti`, `vektör veritabanları`) gerçekten süper sette yok.

@@ -55,10 +55,25 @@ from cv_updater.steps.normalize import MIN_MEANINGFUL_CHARS, normalize
 from cv_updater.steps.render_json import (
     DEFAULT_FONT,
     LIGATURE_FREE_FONTS,
+    TAILORED_FILENAME,
     has_ligatures,
-    render,
+    read_tailored,
     write_tailored,
 )
+from cv_updater.steps.render_json import render as render_json
+from cv_updater.steps.render_pdf import DEFAULT_FONT as RENDER_FONT
+from cv_updater.steps.render_pdf import (
+    DEFAULT_THEME,
+    MAX_PAGES,
+    PDF_FILENAME,
+    RenderCVMissingError,
+    RenderError,
+    build_document,
+    overflow_advice,
+    page_count,
+    write_yaml,
+)
+from cv_updater.steps.render_pdf import render as render_step
 from cv_updater.steps.report import STRONG_FIT, WEAK_FIT, fit_score
 from cv_updater.steps.report import build as build_report
 from cv_updater.steps.report import write_report as write_match_report
@@ -409,7 +424,7 @@ def _render_step(
             "PDF'te 'fine-tuning' → 'fne-tuning' olabilir.[/dim]"
         )
 
-    doc = render(resume, plan, pool, language=lang, run_id=run_dir.name, font=font)
+    doc = render_json(resume, plan, pool, language=lang, run_id=run_dir.name, font=font)
     path = write_tailored(run_dir, doc)
     payload = path.read_text(encoding="utf-8")
 
@@ -770,6 +785,118 @@ def report(
     verification = read_report(violations_path) if violations_path.exists() else None
 
     _report_step(run_dir, analysis, pool, plan, verification)
+
+
+@app.command()
+def render(
+    slug: Annotated[
+        str,
+        typer.Argument(help="Çalıştırma dizini: out/ altındaki ad ya da ayırt edici bir parçası."),
+    ],
+    theme: Annotated[
+        str,
+        typer.Option("--theme", help=f"RenderCV teması (varsayılan: {DEFAULT_THEME})."),
+    ] = DEFAULT_THEME,
+    font: Annotated[
+        str,
+        typer.Option("--font", help=f"RenderCV fontu (varsayılan: {RENDER_FONT})."),
+    ] = RENDER_FONT,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help=f"PDF çıktısı (varsayılan: <çalıştırma>/{PDF_FILENAME})."),
+    ] = None,
+    lang: Annotated[
+        str | None,
+        typer.Option("--lang", help="Bölüm başlıklarının dili: tr ya da en."),
+    ] = None,
+    no_check: Annotated[
+        bool,
+        typer.Option("--no-check", help="Render sonrası ATS öz-kontrolünü çalıştırma."),
+    ] = False,
+) -> None:
+    """`tailored.json`'ı tek komutta PDF'e dönüştür (RenderCV → Typst).
+
+    LLM kullanmaz, ağa çıkmaz. Render bittikten sonra **issue 10'un ATS
+    kontrolü otomatik çalışır**: üret ve doğrula tek adımda.
+
+    RenderCV opsiyonel bir bağımlılık — `uv sync --extra render`.
+    """
+    run_dir = find_run(slug)
+    if run_dir is None:
+        console.print(f"[bold red]✗[/bold red] Çalıştırma bulunamadı: {escape(slug)}")
+        raise typer.Exit(code=2)
+
+    tailored_path = run_dir / TAILORED_FILENAME
+    if not tailored_path.exists():
+        console.print(f"[bold red]✗[/bold red] {escape(str(tailored_path))} yok.")
+        console.print("[dim]Önce `tailor` çalıştır — render ettiği şey o dosya.[/dim]")
+        raise typer.Exit(code=2)
+
+    resume = read_tailored(tailored_path)
+    language = _parse_lang(lang) or _language_of(resume)
+
+    document = build_document(resume, language=language, theme=theme, font=font)
+    yaml_path = write_yaml(run_dir, document)
+    console.print(f"[green]✓[/green] {escape(str(yaml_path))}")
+
+    pdf_path = out or run_dir / PDF_FILENAME
+    try:
+        with console.status("[dim]PDF üretiliyor (Typst)…[/dim]"):
+            produced = render_step(yaml_path, pdf_path)
+    except RenderCVMissingError as exc:
+        console.print(f"[bold red]✗[/bold red] {escape(str(exc))}")
+        raise typer.Exit(code=2) from exc
+    except RenderError as exc:
+        console.print(f"[bold red]✗ Render başarısız:[/bold red] {escape(str(exc)[:600])}")
+        raise typer.Exit(code=1) from exc
+
+    console.print(f"[green]✓[/green] {escape(str(produced))}")
+    _page_budget(produced, resume)
+
+    if no_check:
+        return
+    _check_after_render(produced, run_dir)
+
+
+def _language_of(resume: Resume) -> Language:
+    """CV'nin dili — `tailored.json` bunu `metadata.page.locale`da taşıyor."""
+    return "en" if resume.metadata.page.locale.startswith("en") else "tr"
+
+
+def _page_budget(pdf_path: Path, resume: Resume) -> None:
+    """Tek sayfa kuralı: taşarsa uyar ve **neyi kırpacağını** söyle."""
+    pages = page_count(pdf_path)
+    if pages <= MAX_PAGES:
+        console.print(f"[dim]{pages} sayfa.[/dim]")
+        return
+
+    console.print(f"[yellow]⚠ CV {pages} sayfa[/yellow] [dim](hedef {MAX_PAGES})[/dim]")
+    for hint in overflow_advice(resume):
+        console.print(f"    [dim]→ {escape(hint)}[/dim]")
+
+
+def _check_after_render(pdf_path: Path, run_dir: Path) -> None:
+    """Üretilen PDF'i hemen ATS kontrolünden geçirir (issue 11 kabul kriteri)."""
+    job_path = run_dir / JOB_FILENAME
+    analysis = read_analysis(job_path) if job_path.exists() else None
+
+    try:
+        report = check_pdf(pdf_path, analysis)
+    except NoTextLayerError as exc:
+        console.print(
+            f"[bold red]✗ Üretilen PDF'te metin katmanı yok:[/bold red] {escape(str(exc))}"
+        )
+        raise typer.Exit(code=1) from exc
+
+    console.print()
+    _print_ats(report)
+
+    target = run_dir / ATS_REPORT_FILENAME
+    target.write_text(build_markdown(report), encoding="utf-8", newline="")
+    console.print(f"[green]✓[/green] {escape(str(target))}")
+
+    if report.critical:
+        raise typer.Exit(code=1)
 
 
 @app.command()
