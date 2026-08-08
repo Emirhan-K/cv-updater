@@ -13,6 +13,9 @@ REPO_ROOT = PACKAGE_DIR.parent.parent
 
 DATA_DIR = REPO_ROOT / "data"
 OUT_DIR = REPO_ROOT / "out"
+#: Başvuru arşivi (issue 12). `out/` deneme alanı, burası gönderilen sürüm.
+#: Kişisel + şirket verisi taşıdığı için gitignore'da.
+APPLICATIONS_DIR = REPO_ROOT / "applications"
 
 MASTER_JSON = DATA_DIR / "master.json"
 MASTER_EXAMPLE_JSON = DATA_DIR / "master.example.json"

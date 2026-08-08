@@ -47,6 +47,24 @@ def _offline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket.socket, "connect_ex", _blocked)
 
 
+@pytest.fixture(autouse=True)
+def _isolated_archive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Başvuru arşivini (issue 12) her test için geçici bir dizine yönlendirir.
+
+    `_offline` ile aynı sınıftan bir güvenlik ağı ve aynı sebeple var: `tailor`
+    artık her çalıştırmada bir başvuru kaydı açıyor, ve `test_cli_tailor.py`
+    boru hattını gerçekten çalıştırıyor. Bu fixture eklenmeden önce süit
+    geliştiricinin **gerçek `applications/` dizinine** 34 sahte kayıt yazdı.
+
+    Testler kendi `root=` argümanlarını vermeye devam edebilir; bu yalnızca
+    kimsenin unutmadığından emin oluyor.
+    """
+    archive = tmp_path / "applications"
+    monkeypatch.setattr("cv_updater.paths.APPLICATIONS_DIR", archive)
+    monkeypatch.setattr("cv_updater.steps.applications.APPLICATIONS_DIR", archive)
+    return archive
+
+
 @pytest.fixture(scope="session")
 def rxresume_schema() -> dict[str, Any]:
     """Pakete gömülü şema anlık görüntüsü — `validate` de çalışma zamanında bunu okur."""

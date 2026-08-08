@@ -34,6 +34,19 @@ from cv_updater.steps.analyze_job import (
     read_analysis,
     write_analysis,
 )
+from cv_updater.steps.applications import (
+    FOLLOW_UP_DAYS,
+    STATUS_LABELS,
+    attach,
+    compute_stats,
+    filter_applications,
+    find_by_run,
+    parse_since,
+    record,
+    set_status,
+)
+from cv_updater.steps.applications import find_all as find_applications
+from cv_updater.steps.applications import load_all as load_applications
 from cv_updater.steps.ats_check import (
     ATS_REPORT_FILENAME,
     RISKY_SCORE,
@@ -312,13 +325,26 @@ def tailor(
             help=f"CV fontu. Varsayılan {DEFAULT_FONT} — ligatürsüz olduğu ölçülmüş.",
         ),
     ] = DEFAULT_FONT,
+    source_name: Annotated[
+        str,
+        typer.Option("--source", help="İlanı nerede gördün: LinkedIn, Kariyer.net, şirket sitesi."),
+    ] = "",
+    url: Annotated[
+        str,
+        typer.Option("--url", help="İlanın adresi — başvuru günlüğüne yazılır."),
+    ] = "",
+    no_log: Annotated[
+        bool,
+        typer.Option("--no-log", help="Başvuru günlüğüne kayıt açma."),
+    ] = False,
 ) -> None:
     """İlana göre tailored.json + match_report.md üret (LLM adımı).
 
-    Şu an issue 04-07 kapsamı çalışıyor: ilan okunur, normalize edilir,
-    `JobPosting` olarak yapılandırılır, deterministik ön filtre `candidates.json`'ı
-    üretir, ve uyarlama adımı dürüstlük guardrail'i altında `plan.json` +
-    `violations.json` yazar. `tailored.json` (08) ve rapor (09) eklenecek.
+    İlan okunur, normalize edilir, `JobPosting` olarak yapılandırılır,
+    deterministik ön filtre `candidates.json`'ı üretir, uyarlama adımı dürüstlük
+    guardrail'i altında `plan.json` + `violations.json` yazar, ve sonunda
+    `tailored.json` + `match_report.md` derlenir. Çalıştırma ayrıca başvuru
+    günlüğüne kaydedilir (`--no-log` ile kapatılır).
 
     Guardrail varsayılan olarak **katıdır**: bir ihlal bulunursa adım durur ve
     hiçbir şey üretilmez. `--repair` ihlalli metni kaynağına döndürüp sürdürür.
@@ -371,6 +397,35 @@ def tailor(
 
     _render_step(run_dir, resume, result.plan, pool, lang=_parse_lang(lang), font=font)
     _report_step(run_dir, analysis, pool, result.plan, verification)
+
+    if not no_log:
+        _log_step(run_dir, analysis, fit_score(pool.coverage).percent, source=source_name, url=url)
+
+
+def _log_step(
+    run_dir: Path,
+    analysis: JobAnalysis,
+    score: int,
+    *,
+    source: str,
+    url: str,
+) -> None:
+    """Çalıştırmayı başvuru arşivine alır (issue 12)."""
+    application = record(
+        run_dir,
+        company=analysis.posting.company or "",
+        position=analysis.posting.title,
+        fit_score=score,
+        source=source,
+        url=url,
+    )
+    console.print(
+        f"[green]✓[/green] applications/{escape(application.id)} "
+        f"[dim](durum: {application.status_label})[/dim]"
+    )
+    console.print(
+        f"[dim]Gönderdiğinde: cv-updater log status {escape(application.id)} applied[/dim]"
+    )
 
 
 def _report_step(
@@ -895,8 +950,24 @@ def _check_after_render(pdf_path: Path, run_dir: Path) -> None:
     target.write_text(build_markdown(report), encoding="utf-8", newline="")
     console.print(f"[green]✓[/green] {escape(str(target))}")
 
+    _archive_pdf(run_dir, pdf_path, target)
+
     if report.critical:
         raise typer.Exit(code=1)
+
+
+def _archive_pdf(run_dir: Path, pdf_path: Path, ats_report: Path) -> None:
+    """PDF ve ATS raporunu bu çalıştırmanın başvuru kaydına ekler.
+
+    `tailor` kaydı açtığında PDF henüz yok — render ayrı bir adım. Arşivin
+    eksik kalmaması için sonradan ekleniyor.
+    """
+    application_dir = find_by_run(run_dir.name)
+    if application_dir is None:
+        return
+    for path in (pdf_path, ats_report):
+        attach(application_dir, path)
+    console.print(f"[dim]applications/{escape(application_dir.name)} arşivi güncellendi.[/dim]")
 
 
 @app.command()
@@ -1046,6 +1117,203 @@ def _print_ats(report: AtsReport) -> None:
     console.print(
         f"\n[{style}]Puan: {report.score}/100[/{style}] · [bold]{escape(report.verdict)}[/bold]"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Başvuru günlüğü (issue 12)
+# --------------------------------------------------------------------------- #
+
+log_app = typer.Typer(
+    name="log",
+    help="Başvuru günlüğü: durum güncelle, listele, istatistik çıkar.",
+    no_args_is_help=True,
+)
+app.add_typer(log_app)
+
+
+def _find_application(identifier: str) -> Path:
+    """Tek bir başvuruyu çözer; belirsizlikte adayları listeleyip durur."""
+    matches = find_applications(identifier)
+    if not matches:
+        console.print(f"[bold red]✗[/bold red] Başvuru bulunamadı: {escape(identifier)}")
+        console.print("[dim]`cv-updater log list` ile kayıtlı başvuruları gör.[/dim]")
+        raise typer.Exit(code=2)
+
+    if len(matches) > 1:
+        # Aynı şirkete birden çok uyarlama yapmak normal ve dizin adları
+        # birbirine benziyor; yanlış kaydın durumunu değiştirmektense sor.
+        console.print(
+            f"[bold red]✗[/bold red] {escape(identifier)} {len(matches)} başvuruya uyuyor:"
+        )
+        for directory in matches[:10]:
+            console.print(f"    [dim]{escape(directory.name)}[/dim]")
+        console.print("[dim]Daha ayırt edici bir parça ya da tam adı ver.[/dim]")
+        raise typer.Exit(code=2)
+
+    return matches[0]
+
+
+@log_app.command("status")
+def log_status(
+    identifier: Annotated[
+        str, typer.Argument(metavar="ID", help="Başvuru dizini ya da ayırt edici bir parçası.")
+    ],
+    status: Annotated[
+        str,
+        typer.Argument(help=f"Yeni durum: {', '.join(STATUS_LABELS)}."),
+    ],
+    note: Annotated[
+        str,
+        typer.Option("--note", help="Geçmişe düşülecek not."),
+    ] = "",
+) -> None:
+    """Bir başvurunun durumunu güncelle."""
+    if status not in STATUS_LABELS:
+        console.print(f"[bold red]✗[/bold red] Bilinmeyen durum: {escape(status)}")
+        for key, label in STATUS_LABELS.items():
+            console.print(f"    [dim]{key:10}[/dim] {label}")
+        raise typer.Exit(code=2)
+
+    directory = _find_application(identifier)
+    application = set_status(directory, status, note=note)  # type: ignore[arg-type]
+    console.print(
+        f"[green]✓[/green] {escape(application.id)} → "
+        f"[bold]{escape(application.status_label)}[/bold]"
+    )
+
+
+@log_app.command("list")
+def log_list(
+    status: Annotated[
+        str | None,
+        typer.Option("--status", help="Yalnızca bu durumdakiler."),
+    ] = None,
+    since: Annotated[
+        str | None,
+        typer.Option("--since", help="Şu tarihten beri: `7d`, `3w` ya da `2026-08-01`."),
+    ] = None,
+) -> None:
+    """Başvuruları tablo halinde listele."""
+    applications = load_applications()
+    if not applications:
+        console.print(
+            "[dim]Henüz başvuru kaydı yok. `tailor` her çalıştırmada bir tane açar.[/dim]"
+        )
+        return
+
+    if status is not None and status not in STATUS_LABELS:
+        console.print(f"[bold red]✗[/bold red] Bilinmeyen durum: {escape(status)}")
+        raise typer.Exit(code=2)
+
+    cutoff = None
+    if since is not None:
+        try:
+            cutoff = parse_since(since)
+        except ValueError as exc:
+            console.print(f"[bold red]✗[/bold red] {escape(str(exc))}")
+            raise typer.Exit(code=2) from exc
+
+    found = filter_applications(applications, status=status, since=cutoff)
+    if not found:
+        console.print("[dim]Süzgece uyan başvuru yok.[/dim]")
+        return
+
+    # Sütunlar sarmıyor, kısaltılıyor: uzun bir pozisyon başlığı ("Kıdemli Yapay
+    # Zeka Mühendisi (Görüntü İşleme & LLM)") tek satırlık kaydı beş satıra
+    # yayıp tabloyu okunmaz hale getiriyordu.
+    table = Table(title=f"başvurular ({len(found)})", title_style="bold")
+    table.add_column("id", style="dim", no_wrap=True, overflow="ellipsis", max_width=34)
+    table.add_column("şirket", no_wrap=True, overflow="ellipsis", max_width=20)
+    table.add_column("pozisyon", no_wrap=True, overflow="ellipsis", max_width=30)
+    table.add_column("uyum", justify="right", no_wrap=True)
+    table.add_column("durum", no_wrap=True)
+    table.add_column("bekleme", justify="right", no_wrap=True)
+
+    for item in found:
+        waiting = item.days_waiting()
+        wait_text = "—" if waiting is None else f"{waiting} gün"
+        if item.needs_follow_up():
+            wait_text = f"[bold yellow]{wait_text} ⚑[/bold yellow]"
+        table.add_row(
+            escape(item.id),
+            escape(item.company or "—"),
+            escape(item.position or "—"),
+            f"%{item.fit_score}",
+            escape(item.status_label),
+            wait_text,
+        )
+    console.print(table)
+
+    stuck = [item for item in found if item.needs_follow_up()]
+    if stuck:
+        console.print(
+            f"[yellow]⚑ {len(stuck)} başvuru {FOLLOW_UP_DAYS}+ gündür cevapsız[/yellow] "
+            "[dim]— takip mesajı zamanı.[/dim]"
+        )
+
+
+@log_app.command("stats")
+def log_stats() -> None:
+    """Haftalık tempo, dönüş oranı ve **uyum skoru ile dönüş ilişkisi**."""
+    applications = load_applications()
+    if not applications:
+        console.print("[dim]Henüz başvuru kaydı yok.[/dim]")
+        return
+
+    stats = compute_stats(applications)
+
+    summary = Table(title="başvuru istatistikleri", title_style="bold", show_header=False)
+    summary.add_column(style="dim")
+    summary.add_column(justify="right")
+    summary.add_row("toplam kayıt", str(stats.total))
+    summary.add_row("gönderilmiş", str(stats.sent))
+    summary.add_row("dönüş alan", f"{stats.answered} (%{stats.answered_rate * 100:.0f})")
+    summary.add_row("ilerleyen", f"{stats.positive} (%{stats.positive_rate * 100:.0f})")
+    summary.add_row("red", str(stats.rejected))
+    summary.add_row("sessiz", str(stats.silent))
+    summary.add_row("takip bekleyen", str(stats.follow_up))
+    console.print(summary)
+
+    if stats.per_week:
+        weekly = Table(title="haftalık tempo", title_style="bold")
+        weekly.add_column("hafta", style="dim")
+        weekly.add_column("başvuru", justify="right")
+        for week, count in list(stats.per_week.items())[-8:]:
+            weekly.add_row(week, str(count))
+        console.print(weekly)
+
+    buckets = Table(title="uyum skoru → dönüş", title_style="bold")
+    buckets.add_column("uyum", style="dim")
+    buckets.add_column("gönderilen", justify="right")
+    buckets.add_column("dönüş", justify="right")
+    buckets.add_column("ilerleyen", justify="right")
+    for bucket in stats.buckets:
+        if not bucket.total:
+            continue
+        buckets.add_row(
+            bucket.label,
+            str(bucket.total),
+            f"{bucket.answered} (%{bucket.answered_rate * 100:.0f})",
+            f"{bucket.positive} (%{bucket.positive_rate * 100:.0f})",
+        )
+    console.print(buckets)
+
+    best = stats.best_bucket
+    if best is None or not stats.sent:
+        console.print(
+            "[dim]Henüz gönderilmiş başvuru yok — eşik hakkında bir şey söylenemez.[/dim]"
+        )
+        return
+
+    console.print(
+        f"En iyi dönüş aralığı: [bold]{escape(best.label)}[/bold] "
+        f"(%{best.positive_rate * 100:.0f} ilerleme, {best.total} başvuru)"
+    )
+    if not stats.confident:
+        console.print(
+            f"[dim]Ama {stats.sent} gönderim bir eşik belirlemek için az; "
+            f"{stats.confidence_threshold}+ olunca bu satır anlamlanır.[/dim]"
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover
