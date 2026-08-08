@@ -1,128 +1,139 @@
 # cv-updater
 
-İş ilanına göre CV uyarlayan bir CLI aracı. `master.json` her deneyimin, her maddenin ve her
-yeteneğin **süper setini** tutar; araç bir ilanı yapılandırılmış olarak analiz eder, deterministik
-bir ön filtre ile adayları puanlar, ve LLM adımı bu setten **seçer ve yeniden ifade eder** —
-asla yeni içerik uydurmaz.
+A CLI tool that tailors a CV to a job posting. `master.json` holds the **superset** of every
+experience, every bullet and every skill; the tool parses a posting into structured data, scores
+the candidate material with a deterministic pre-filter, and the LLM step **selects and rephrases**
+from that set — it never invents new content.
 
-> **Dürüstlük guardrail'i projenin kalbi.** LLM mevcut malzemeyi sıralayabilir, seçebilir ve
-> yeniden ifade edebilir; ama bir deneyimi, bir yeteneği, bir tarihi ya da bir metriği icat edemez.
+> **The honesty guardrail is the heart of the project.** The model may rank, select and rephrase
+> existing material; it cannot invent an experience, a skill, a date or a metric.
 
 ```
-ilan.txt ──▶ [1] ilan analizi ····························· LLM
-                  └── halüsinasyon süzgeci + etiket eşlemesi   deterministik
+posting.txt ─▶ [1] posting analysis ························ LLM
+                  └── hallucination filter + tag mapping      deterministic
                                     │
-master.json ────────▶ [2] ön filtre: etiket puanlama ········ deterministik
- (her deneyimin,                    │                          (LLM'e giden metni yarıya indirir)
-  maddenin ve                       ▼
-  yeteneğin süper seti)  [3] seçim + yeniden ifade ·········· LLM
+master.json ────────▶ [2] pre-filter: tag scoring ··········· deterministic
+ (superset of every                 │                         (halves the text sent to the LLM)
+  experience, bullet                ▼
+  and skill)             [3] selection + rephrasing ········· LLM
                                     │
-                         [4] DÜRÜSTLÜK GUARDRAIL'İ ·········· deterministik
-                                    │                          ihlal varsa akış BURADA durur
+                         [4] HONESTY GUARDRAIL ·············· deterministic
+                                    │                         on a violation the run stops HERE
                     ┌───────────────┴───────────────┐
                     ▼                               ▼
              tailored.json                   match_report.md
-   (Reactive Resume'a import edilir)   (uyum skoru, gerekçe, eksik kelimeler)
+      (imported into Reactive Resume)   (fit score, reasoning, missing keywords)
                     │
                     ▼
-              [5] render: RenderCV → Typst → PDF ············· deterministik  (opsiyonel)
+              [5] render: RenderCV → Typst → PDF ············ deterministic  (optional)
                     │
                     ▼
-              [6] ATS ÖZ-KONTROLÜ ···························· deterministik
-                    │  PDF'ten metni geri oku: ligatür, anahtar kelime, iletişim,
-                    ▼  link görünürlüğü, başlık, okuma sırası, tarih
+              [6] ATS SELF-CHECK ··························· deterministic
+                    │  read the text back out of the PDF: ligatures, keywords,
+                    ▼  contact details, link visibility, headings, reading order, dates
               cv.pdf + ats_report.md
 ```
 
-**Modelin söylediği hiçbir şey doğrulanmadan bir sonraki adıma geçmiyor.** İki LLM adımının
-ikisinin de ardından deterministik bir denetim var.
+**Nothing the model says reaches the next step unverified.** Each of the two LLM steps is followed
+by a deterministic audit.
 
-## Kurulum
+## Install
 
-Python 3.12 + [uv](https://docs.astral.sh/uv/) gerekir.
+Requires Python 3.12 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/Emirhan-K/cv-updater
 cd cv-updater
 uv sync
-uv sync --extra render --extra pdf   # opsiyonel: PDF üretimi ve yedek metin çıkarıcı
+uv sync --extra render --extra pdf   # optional: PDF generation and the fallback text extractor
 ```
 
-İki opsiyonel ek var: `render` (RenderCV + Typst — `cv-updater render` için) ve `pdf`
-(pdfplumber — ATS kontrolünün yedek metin çıkarıcısı). İkisi de olmadan boru hattının
-tamamı çalışır.
+There are two optional extras: `render` (RenderCV + Typst — for `cv-updater render`) and `pdf`
+(pdfplumber — the fallback text extractor for the ATS check). The whole pipeline runs without
+either of them.
 
-LLM adımları için `.env.example`'ı `.env` olarak kopyala. İki seçenek var: yerel bir gateway
-(`LLM_BASE_URL` + `LLM_API_KEY`) ya da doğrudan Anthropic (`ANTHROPIC_API_KEY`). `--help` ve
-`validate` anahtarsız çalışır.
+For the LLM steps, copy `.env.example` to `.env`. Two options: a local gateway
+(`LLM_BASE_URL` + `LLM_API_KEY`) or Anthropic directly (`ANTHROPIC_API_KEY`). `--help` and
+`validate` work with no key at all.
 
-## Durum
+## Status
 
-**Faz 0–3 tamam (issue 01–12): araç ilandan PDF'e kadar uçtan uca çalışıyor.** İlan analizi,
-ön filtre, guardrail'li uyarlama, `tailored.json` + `match_report.md`, tek komutla PDF ve
-üretilen PDF'in ATS öz-kontrolü. Testler ağa çıkmıyor.
+**Phases 0–3 complete (issues 01–12): the tool runs end to end, from posting to PDF.** Posting
+analysis, pre-filter, guardrailed tailoring, `tailored.json` + `match_report.md`, a single-command
+PDF, and an ATS self-check of the PDF it just produced. The tests never touch the network.
 
-Günlük kullanım [`docs/USAGE.md`](docs/USAGE.md), akışın tamamı
-[`docs/PIPELINE.md`](docs/PIPELINE.md), guardrail'in nasıl çalıştığı
+Day-to-day use is in [`docs/USAGE.md`](docs/USAGE.md), the full pipeline in
+[`docs/PIPELINE.md`](docs/PIPELINE.md), and how the guardrail works in
 [`docs/GUARDRAILS.md`](docs/GUARDRAILS.md).
 
-## Komutlar
+## Commands
 
-| Komut | Ne yapar | LLM? |
+| Command | What it does | LLM? |
 |---|---|---|
-| `cv-updater validate` | `master.json`'ı şemaya karşı doğrular + içerik lint'i çalıştırır | hayır |
-| `cv-updater tailor <ilan>` | Tam boru hattı: `tailored.json` + `match_report.md` üretir | evet |
-| `cv-updater score <slug>` | Sadece ön filtreyi çalıştırır, puanlamayı tabloyla gösterir | hayır |
-| `cv-updater report <slug>` | Uyum raporunu yeniden üretir | hayır |
-| `cv-updater render <slug>` | `tailored.json` → PDF (RenderCV/Typst) + otomatik ATS kontrolü | hayır |
-| `cv-updater check <pdf>` | PDF'ten metni geri çıkarıp ATS uyumunu puanlar; kritik bulguda çıkış kodu 1 | hayır |
-| `cv-updater log list/status/stats` | Başvuru günlüğü: takip, durum, "hangi skorun üstünde dönüş geliyor" | hayır |
+| `cv-updater validate` | Validates `master.json` against the schema and runs the content lint | no |
+| `cv-updater tailor <posting>` | Full pipeline: produces `tailored.json` + `match_report.md` | yes |
+| `cv-updater score <slug>` | Runs only the pre-filter and shows the scoring as a table | no |
+| `cv-updater report <slug>` | Regenerates the match report | no |
+| `cv-updater render <slug>` | `tailored.json` → PDF via RenderCV/Typst, plus an automatic ATS check | no |
+| `cv-updater check <pdf>` | Extracts the text back out of a PDF and scores ATS fit; exits 1 on a critical finding | no |
+| `cv-updater log list/status/stats` | Application log: tracking, status, "above which score do replies come in" | no |
 
-Guardrail varsayılan olarak **katı**: bir ihlal bulunursa akış durur ve `tailored.json`
-üretilmez. `--repair` ihlalli metni kaynağına döndürüp sürdürür — bir gevşetme değil,
-uydurulan metnin atılması.
+The guardrail is **strict** by default: if a violation is found the run stops and no
+`tailored.json` is written. `--repair` reverts the offending text to its source and continues —
+that is not a relaxation, it is throwing the invented text away.
 
-`python -m cv_updater` de aynı arayüzü verir.
+`python -m cv_updater` gives the same interface.
 
-## Örnek akış
+## Example run
 
 ```bash
-uv run cv-updater validate                  # süper set sağlıklı mı?
+uv run cv-updater validate                    # is the superset healthy?
 
-# ilanı üç yoldan biriyle ver:
-Get-Clipboard | uv run cv-updater tailor -  # panodan (PowerShell)
-uv run cv-updater tailor ilanlar/acme.txt   # dosyadan
-uv run cv-updater tailor --paste            # $EDITOR açılır
+# give it the posting in one of three ways:
+Get-Clipboard | uv run cv-updater tailor -    # from the clipboard (PowerShell)
+uv run cv-updater tailor postings/acme.txt    # from a file
+uv run cv-updater tailor --paste              # opens $EDITOR
 
-uv run cv-updater score acme                # ön filtreyi gözle denetle (LLM'e gitmez)
-uv run cv-updater tailor ilan.txt --lang en # Türkçe ilana İngilizce CV
-uv run cv-updater tailor ilan.txt --repair  # guardrail ihlalinde durma, onararak devam et
+uv run cv-updater score acme                  # inspect the pre-filter by eye; never hits the LLM
+uv run cv-updater tailor posting.txt --lang en  # English CV from a Turkish posting
+uv run cv-updater tailor posting.txt --repair   # don't stop on a violation, repair and continue
 ```
 
-Her çalıştırma `out/<slug>-<zaman damgası>/` altına yazar; önceki çıktı asla ezilmez.
-Bir çalıştırma dizini şunları taşır: `job_raw.txt` · `job_clean.txt` · `job.json` ·
-`candidates.json` · `plan.json` · `violations.json` · **`tailored.json`** ·
-**`match_report.md`**.
+Every run writes to `out/<slug>-<timestamp>/`; previous output is never overwritten. A run
+directory holds: `job_raw.txt` · `job_clean.txt` · `job.json` · `candidates.json` · `plan.json` ·
+`violations.json` · **`tailored.json`** · **`match_report.md`**.
 
-`--no-llm` iki LLM adımını da atlar (en son analizi ve planı yeniden kullanır) — sonraki
-adımlar üzerinde çalışırken kota harcamamak için.
+`--no-llm` skips both LLM steps, reusing the most recent analysis and plan — so you don't burn
+quota while working on the steps that come after them.
 
-## Geliştirme
+## Why a superset instead of one CV
+
+A single CV forces one framing of your history on every posting. The superset keeps every framing
+at once: each experience carries multiple bullet variants — the same job shown from an AI angle or
+a backend angle — in both Turkish and English, each tagged from a controlled vocabulary
+(`data/tags.yaml`). The pre-filter scores those tags against the posting and hands the LLM a
+shortlist rather than the whole history.
+
+That split is what makes the guardrail enforceable: because every candidate bullet already exists
+as text with a stable id, the verification step can check that what came back is grounded in what
+went in.
+
+## Development
 
 ```bash
-uv run pytest                     # tüm testler (ağa çıkmaz)
-uv run pytest tests/test_cli.py   # tek dosya
+uv run pytest                     # full suite, never touches the network
+uv run pytest tests/test_cli.py   # single file
 uv run ruff check .               # lint
-uv run ruff format .              # biçimlendirme
+uv run ruff format .              # formatting
 ```
 
-## Dokümantasyon
+## Documentation
 
-Giriş noktası: [`docs/INDEX.md`](docs/INDEX.md). Yol haritası ve issue listesi:
+Entry point: [`docs/INDEX.md`](docs/INDEX.md). Roadmap and issue list:
 [`docs/ROADMAP.md`](docs/ROADMAP.md) →
 [github.com/Emirhan-K/cv-updater/issues](https://github.com/Emirhan-K/cv-updater/issues).
 
-## Gizlilik
+## Privacy
 
-`data/master.json` kişisel veri içerir (telefon, e-posta, adres) ve `.gitignore`'dadır.
-Depoya yalnızca anonimleştirilmiş `data/master.example.json` girer.
+`data/master.json` contains personal data — phone, email, address — and is in `.gitignore`. Only
+the anonymized `data/master.example.json` is committed.
