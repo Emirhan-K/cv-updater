@@ -216,6 +216,12 @@ Kural listesi ve tasarım gerekçesi: [`GUARDRAILS.md`](GUARDRAILS.md).
 - **deneyimde `roles[]` varsa maddeler öğeye değil en güncel role yazılır** — Reactive
   Resume roller doluysa öğe seviyesindeki `description`'ı render etmiyor
 - proje maddeleri ön filtrenin seçtiği haliyle, **yeniden ifade edilmeden**
+- **özetin sonuna GitHub daveti eklenir** — metin sabit (CV'nin dilinde), adres profil
+  bölümündeki GitHub satırından okunur; ikisi de modelden geçmez. Profil yoksa cümle de
+  yok. Sebebi pratik: profil satırındaki linki çoğu ATS okumuyor, özet ise CV'nin okunan
+  tek paragrafı
+- **en fazla 3 proje gösterilir** (`models/tailor.MAX_PROJECTS`) — sıralama modelin
+  seçimi, kırpma `steps/verify` içinde deterministik
 - seçilmeyen öğe silinmez, `hidden: true` olur
 - `metadata.page.locale` dile göre (`tr-TR` / `en-US`)
 - **tipografi ligatürsüz bir fontla değiştirilir** (varsayılan `Tinos`) ve ağırlıklar o
